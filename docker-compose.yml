@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  homeassistant:
+    container_name: homeassistant-fallback-test
+    image: homeassistant/home-assistant:latest
+    volumes:
+      # Configuration Home Assistant
+      - ./test-config:/config
+      # Mount l'intégration en développement
+      - ./custom_components/fallback_sensors:/config/custom_components/fallback_sensors:ro
+    environment:
+      - TZ=Europe/Paris
+    restart: unless-stopped
+    network_mode: host
+    privileged: true

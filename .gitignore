@@ -40,3 +40,16 @@ Thumbs.db
 # Home Assistant
 home-assistant.log
 home-assistant_v2.db
+
+# Test configuration (keep structure but ignore data)
+test-config/*.db
+test-config/*.db-shm
+test-config/*.db-wal
+test-config/*.log
+test-config/.storage/
+test-config/.cloud/
+test-config/deps/
+test-config/tts/
+test-config/www/
+test-config/blueprints/
+test-config/*.pid

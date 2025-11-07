@@ -1,0 +1,94 @@
+# Configuration Home Assistant de test pour Fallback Sensors
+
+# Loads default set of integrations. Do not remove.
+default_config:
+
+# Load the Lovelace UI
+lovelace:
+  mode: storage
+
+# Text to speech
+tts:
+  - platform: google_translate
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+
+# Configuration de logging pour debug
+logger:
+  default: info
+  logs:
+    custom_components.fallback_sensors: debug
+
+# Capteurs de test pour tester le fallback
+sensor:
+  # Capteurs simulés pour tester
+  - platform: template
+    sensors:
+      test_temp_primary:
+        friendly_name: "Test Temperature Primary"
+        value_template: "{{ 20 + (range(0, 5) | random) }}"
+        unit_of_measurement: "°C"
+        device_class: temperature
+
+      test_temp_backup:
+        friendly_name: "Test Temperature Backup"
+        value_template: "{{ 18 + (range(0, 3) | random) }}"
+        unit_of_measurement: "°C"
+        device_class: temperature
+
+      test_temp_fallback:
+        friendly_name: "Test Temperature Fallback"
+        value_template: "{{ 22 + (range(0, 2) | random) }}"
+        unit_of_measurement: "°C"
+        device_class: temperature
+
+  # Exemple de configuration avec Fallback Sensors (via YAML)
+  - platform: fallback_sensors
+    name: "Temperature Fallback Test"
+    hysteresis_delay: 5
+    entities:
+      - sensor.test_temp_primary
+      - sensor.test_temp_backup
+      - sensor.test_temp_fallback
+    conditions:
+      - type: range
+        min: 15
+        max: 30
+
+# Input booleans pour simuler disponibilité
+input_boolean:
+  test_primary_available:
+    name: Test Primary Sensor Available
+    initial: on
+
+  test_backup_available:
+    name: Test Backup Sensor Available
+    initial: on
+
+# Automatisations pour simuler les pannes
+automation:
+  - id: simulate_primary_failure
+    alias: Simuler panne capteur principal
+    trigger:
+      - platform: state
+        entity_id: input_boolean.test_primary_available
+        to: 'off'
+    action:
+      - service: sensor.set_value
+        target:
+          entity_id: sensor.test_temp_primary
+        data:
+          value: unavailable
+
+  - id: restore_primary
+    alias: Restaurer capteur principal
+    trigger:
+      - platform: state
+        entity_id: input_boolean.test_primary_available
+        to: 'on'
+    action:
+      - service: homeassistant.update_entity
+        target:
+          entity_id: sensor.test_temp_primary
