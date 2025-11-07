@@ -7,12 +7,28 @@
         "description": "Configure a sensor that falls back to alternative sources when the primary is unavailable.",
         "data": {
           "name": "Sensor Name",
-          "entities": "Source Entities (comma-separated)"
+          "entities": "Source Entities",
+          "unique_id": "Unique ID (optional)"
         }
       }
     },
     "error": {
-      "invalid_entities": "At least 2 entities are required"
+      "min_entities": "At least 2 entities are required"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Update Fallback Sensor",
+        "description": "Update the configuration of your fallback sensor.",
+        "data": {
+          "name": "Sensor Name",
+          "entities": "Source Entities"
+        }
+      }
+    },
+    "error": {
+      "min_entities": "At least 2 entities are required"
     }
   }
 }

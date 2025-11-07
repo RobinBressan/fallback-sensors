@@ -9,6 +9,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_NAME,
     CONF_UNIQUE_ID,
@@ -48,7 +49,7 @@ async def async_setup_platform(
     async_add_entities: AddEntitiesCallback,
     discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
-    """Set up the Fallback Sensor platform.
+    """Set up the Fallback Sensor platform via YAML.
 
     Args:
         hass: Home Assistant instance.
@@ -66,6 +67,32 @@ async def async_setup_platform(
     async_add_entities([sensor], True)
 
 
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up the Fallback Sensor platform from a config entry.
+
+    Args:
+        hass: Home Assistant instance.
+        entry: Config entry instance.
+        async_add_entities: Callback to add entities.
+    """
+    name: str = entry.data[CONF_NAME]
+    entities: list[str] = entry.data[CONF_ENTITIES]
+    unique_id: str | None = entry.data.get(CONF_UNIQUE_ID, entry.entry_id)
+
+    _LOGGER.debug(
+        "Setting up fallback sensor '%s' from config entry with entities: %s",
+        name,
+        entities,
+    )
+
+    sensor = FallbackSensor(hass, name, entities, unique_id, entry)
+    async_add_entities([sensor], True)
+
+
 class FallbackSensor(SensorEntity):
     """Representation of a Fallback Sensor.
 
@@ -78,6 +105,7 @@ class FallbackSensor(SensorEntity):
         name: str,
         entities: list[str],
         unique_id: str | None = None,
+        config_entry: ConfigEntry | None = None,
     ) -> None:
         """Initialize the Fallback Sensor.
 
@@ -86,11 +114,13 @@ class FallbackSensor(SensorEntity):
             name: Name of the sensor.
             entities: List of entity IDs to use as fallback sources.
             unique_id: Optional unique identifier.
+            config_entry: Optional config entry for UI-configured sensors.
         """
         self.hass = hass
         self._attr_name = name
         self._attr_unique_id = unique_id
         self._entities = entities
+        self._config_entry = config_entry
 
         # Internal state
         self._attr_native_value: str | None = None

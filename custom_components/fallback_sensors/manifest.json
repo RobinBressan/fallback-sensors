@@ -2,7 +2,7 @@
   "domain": "fallback_sensors",
   "name": "Fallback Sensors",
   "codeowners": [],
-  "config_flow": false,
+  "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/yourusername/fallback-sensors",
   "iot_class": "calculated",
