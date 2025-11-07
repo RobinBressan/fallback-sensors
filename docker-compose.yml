@@ -12,5 +12,8 @@ services:
     environment:
       - TZ=Europe/Paris
     restart: unless-stopped
-    network_mode: host
-    privileged: true
+    ports:
+      - "8123:8123"
+    # Note: network_mode: host peut être utilisé sur Linux pour une meilleure compatibilité
+    # avec la découverte d'appareils. Sur macOS/Windows, utilisez ports ci-dessus.
+    # network_mode: host
