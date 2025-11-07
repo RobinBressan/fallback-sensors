@@ -46,6 +46,7 @@ test-config/*.db
 test-config/*.db-shm
 test-config/*.db-wal
 test-config/*.log
+test-config/*.log.*
 test-config/.storage/
 test-config/.cloud/
 test-config/deps/
@@ -53,3 +54,7 @@ test-config/tts/
 test-config/www/
 test-config/blueprints/
 test-config/*.pid
+test-config/.HA_VERSION
+test-config/.ha_run.lock
+test-config/home-assistant_v2.db*
+test-config/*.fault

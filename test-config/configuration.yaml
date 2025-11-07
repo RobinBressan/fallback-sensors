@@ -57,38 +57,8 @@ sensor:
         min: 15
         max: 30
 
-# Input booleans to simulate availability
-input_boolean:
-  test_primary_available:
-    name: Test Primary Sensor Available
-    initial: on
-
-  test_backup_available:
-    name: Test Backup Sensor Available
-    initial: on
-
-# Automations to simulate failures
-automation:
-  - id: simulate_primary_failure
-    alias: Simulate primary sensor failure
-    trigger:
-      - platform: state
-        entity_id: input_boolean.test_primary_available
-        to: 'off'
-    action:
-      - service: sensor.set_value
-        target:
-          entity_id: sensor.test_temp_primary
-        data:
-          value: unavailable
-
-  - id: restore_primary
-    alias: Restore primary sensor
-    trigger:
-      - platform: state
-        entity_id: input_boolean.test_primary_available
-        to: 'on'
-    action:
-      - service: homeassistant.update_entity
-        target:
-          entity_id: sensor.test_temp_primary
+# Note: Template sensors automatically update every minute
+# To test fallback behavior, you can:
+# 1. Use Developer Tools > States to manually change sensor states
+# 2. Modify sensor values here and restart Home Assistant
+# 3. Add custom automations in automations.yaml
