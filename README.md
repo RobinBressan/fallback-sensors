@@ -263,8 +263,8 @@ sensor:
 
 ## Support et contributions
 
-- **Issues** : [GitHub Issues](https://github.com/yourusername/fallback-sensors/issues)
-- **Discussions** : [GitHub Discussions](https://github.com/yourusername/fallback-sensors/discussions)
+- **Issues** : [GitHub Issues](https://github.com/RobinBressan/fallback-sensors/issues)
+- **Discussions** : [GitHub Discussions](https://github.com/RobinBressan/fallback-sensors/discussions)
 - **Pull Requests** : Les contributions sont les bienvenues !
 
 ## License

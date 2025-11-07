@@ -4,9 +4,9 @@
   "codeowners": [],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/yourusername/fallback-sensors",
+  "documentation": "https://github.com/RobinBressan/fallback-sensors",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/yourusername/fallback-sensors/issues",
+  "issue_tracker": "https://github.com/RobinBressan/fallback-sensors/issues",
   "requirements": [],
   "version": "1.0.0"
 }
