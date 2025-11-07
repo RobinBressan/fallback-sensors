@@ -13,7 +13,13 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 import homeassistant.helpers.config_validation as cv
 
-from .const import CONF_ENTITIES, DEFAULT_NAME, DOMAIN
+from .const import (
+    CONF_ENTITIES,
+    CONF_HYSTERESIS_DELAY,
+    DEFAULT_HYSTERESIS_DELAY,
+    DEFAULT_NAME,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,6 +67,16 @@ class FallbackSensorsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ),
                 ),
                 vol.Optional(CONF_UNIQUE_ID): cv.string,
+                vol.Optional(
+                    CONF_HYSTERESIS_DELAY, default=DEFAULT_HYSTERESIS_DELAY
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=300,
+                        unit_of_measurement="seconds",
+                        mode=selector.NumberSelectorMode.BOX,
+                    ),
+                ),
             }
         )
 
@@ -121,6 +137,9 @@ class FallbackSensorsOptionsFlow(config_entries.OptionsFlow):
         # Get current configuration
         current_name = self.config_entry.data.get(CONF_NAME, DEFAULT_NAME)
         current_entities = self.config_entry.data.get(CONF_ENTITIES, [])
+        current_hysteresis = self.config_entry.data.get(
+            CONF_HYSTERESIS_DELAY, DEFAULT_HYSTERESIS_DELAY
+        )
 
         # Show options form
         options_schema = vol.Schema(
@@ -131,6 +150,16 @@ class FallbackSensorsOptionsFlow(config_entries.OptionsFlow):
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         multiple=True,
+                    ),
+                ),
+                vol.Optional(
+                    CONF_HYSTERESIS_DELAY, default=current_hysteresis
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=300,
+                        unit_of_measurement="seconds",
+                        mode=selector.NumberSelectorMode.BOX,
                     ),
                 ),
             }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 import logging
 from typing import Any
@@ -29,6 +30,8 @@ from .const import (
     ATTR_SOURCE_ENTITIES,
     ATTR_SOURCE_INDEX,
     CONF_ENTITIES,
+    CONF_HYSTERESIS_DELAY,
+    DEFAULT_HYSTERESIS_DELAY,
     DEFAULT_NAME,
 )
 
@@ -39,6 +42,9 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Required(CONF_ENTITIES): vol.All(cv.ensure_list, vol.Length(min=2)),
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
         vol.Optional(CONF_UNIQUE_ID): cv.string,
+        vol.Optional(
+            CONF_HYSTERESIS_DELAY, default=DEFAULT_HYSTERESIS_DELAY
+        ): cv.positive_int,
     }
 )
 
@@ -60,10 +66,11 @@ async def async_setup_platform(
     name: str = config[CONF_NAME]
     entities: list[str] = config[CONF_ENTITIES]
     unique_id: str | None = config.get(CONF_UNIQUE_ID)
+    hysteresis_delay: int = config[CONF_HYSTERESIS_DELAY]
 
     _LOGGER.debug("Setting up fallback sensor '%s' with entities: %s", name, entities)
 
-    sensor = FallbackSensor(hass, name, entities, unique_id)
+    sensor = FallbackSensor(hass, name, entities, unique_id, None, hysteresis_delay)
     async_add_entities([sensor], True)
 
 
@@ -82,6 +89,9 @@ async def async_setup_entry(
     name: str = entry.data[CONF_NAME]
     entities: list[str] = entry.data[CONF_ENTITIES]
     unique_id: str | None = entry.data.get(CONF_UNIQUE_ID, entry.entry_id)
+    hysteresis_delay: int = entry.data.get(
+        CONF_HYSTERESIS_DELAY, DEFAULT_HYSTERESIS_DELAY
+    )
 
     _LOGGER.debug(
         "Setting up fallback sensor '%s' from config entry with entities: %s",
@@ -89,7 +99,7 @@ async def async_setup_entry(
         entities,
     )
 
-    sensor = FallbackSensor(hass, name, entities, unique_id, entry)
+    sensor = FallbackSensor(hass, name, entities, unique_id, entry, hysteresis_delay)
     async_add_entities([sensor], True)
 
 
@@ -106,6 +116,7 @@ class FallbackSensor(SensorEntity):
         entities: list[str],
         unique_id: str | None = None,
         config_entry: ConfigEntry | None = None,
+        hysteresis_delay: int = DEFAULT_HYSTERESIS_DELAY,
     ) -> None:
         """Initialize the Fallback Sensor.
 
@@ -115,12 +126,14 @@ class FallbackSensor(SensorEntity):
             entities: List of entity IDs to use as fallback sources.
             unique_id: Optional unique identifier.
             config_entry: Optional config entry for UI-configured sensors.
+            hysteresis_delay: Delay in seconds before switching sources (0 = disabled).
         """
         self.hass = hass
         self._attr_name = name
         self._attr_unique_id = unique_id
         self._entities = entities
         self._config_entry = config_entry
+        self._hysteresis_delay = hysteresis_delay
 
         # Internal state
         self._attr_native_value: str | None = None
@@ -128,6 +141,11 @@ class FallbackSensor(SensorEntity):
         self._source_index: int | None = None
         self._fallback_count: int = 0
         self._last_fallback_time: datetime | None = None
+
+        # Hysteresis tracking
+        self._pending_source: str | None = None
+        self._pending_since: datetime | None = None
+        self._hysteresis_timer: Any = None
 
         # Attributes from source
         self._attr_native_unit_of_measurement: str | None = None
@@ -176,38 +194,149 @@ class FallbackSensor(SensorEntity):
         # Find the first available source
         active_entity_id, active_state = self._get_active_entity()
 
-        if active_state is None:
-            # No available source
-            self._attr_native_value = None
-            self._current_source = None
-            self._source_index = None
-            self._attr_available = False
-
-            if previous_source is not None:
-                _LOGGER.warning(
-                    "No available source for fallback sensor '%s'",
-                    self.name,
-                )
-                self._record_fallback()
+        # Check if source would change
+        if active_entity_id != previous_source:
+            self._handle_source_change_with_hysteresis(
+                active_entity_id, active_state, previous_source
+            )
         else:
-            # Update from active source
-            self._attr_native_value = active_state.state
-            self._current_source = active_entity_id
-            self._source_index = self._entities.index(active_entity_id)
-            self._attr_available = True
+            # Same source, cancel any pending changes
+            self._cancel_hysteresis_timer()
+            self._pending_source = None
+            self._pending_since = None
 
-            # Copy attributes from source
-            self._copy_attributes_from_source(active_state)
+            # Update state from current source
+            if active_state is not None:
+                self._apply_source_state(active_entity_id, active_state, False)
+            else:
+                self._set_unavailable(previous_source)
 
-            # Record fallback if source changed
-            if previous_source is not None and previous_source != active_entity_id:
-                _LOGGER.info(
-                    "Fallback sensor '%s' switched from '%s' to '%s'",
-                    self.name,
-                    previous_source,
-                    active_entity_id,
-                )
-                self._record_fallback()
+    def _handle_source_change_with_hysteresis(
+        self,
+        new_source: str | None,
+        new_state: State | None,
+        previous_source: str | None,
+    ) -> None:
+        """Handle source change with hysteresis delay.
+
+        Args:
+            new_source: New source entity ID.
+            new_state: New source state.
+            previous_source: Previous source entity ID.
+        """
+        # If hysteresis is disabled or this is the first source, apply immediately
+        if self._hysteresis_delay == 0 or previous_source is None:
+            if new_state is not None:
+                self._apply_source_state(new_source, new_state, True)
+            else:
+                self._set_unavailable(previous_source)
+            return
+
+        # Check if we're already tracking a pending change to this source
+        if self._pending_source == new_source:
+            # Check if enough time has passed
+            if self._pending_since is not None:
+                elapsed = (datetime.now() - self._pending_since).total_seconds()
+                if elapsed >= self._hysteresis_delay:
+                    # Time has passed, apply the change
+                    self._cancel_hysteresis_timer()
+                    if new_state is not None:
+                        self._apply_source_state(new_source, new_state, True)
+                    else:
+                        self._set_unavailable(previous_source)
+            return
+
+        # New pending source, start tracking
+        self._cancel_hysteresis_timer()
+        self._pending_source = new_source
+        self._pending_since = datetime.now()
+
+        _LOGGER.debug(
+            "Fallback sensor '%s': pending switch from '%s' to '%s' (delay: %ds)",
+            self.name,
+            previous_source,
+            new_source,
+            self._hysteresis_delay,
+        )
+
+        # Schedule the change
+        self._hysteresis_timer = self.hass.loop.call_later(
+            self._hysteresis_delay,
+            lambda: asyncio.create_task(self._apply_pending_source()),
+        )
+
+    async def _apply_pending_source(self) -> None:
+        """Apply the pending source change after hysteresis delay."""
+        if self._pending_source is None:
+            return
+
+        _LOGGER.info(
+            "Fallback sensor '%s': applying pending switch to '%s'",
+            self.name,
+            self._pending_source,
+        )
+
+        # Re-check the active source
+        active_entity_id, active_state = self._get_active_entity()
+
+        if active_state is not None:
+            self._apply_source_state(active_entity_id, active_state, True)
+        else:
+            self._set_unavailable(self._current_source)
+
+        self._pending_source = None
+        self._pending_since = None
+        self.async_write_ha_state()
+
+    def _cancel_hysteresis_timer(self) -> None:
+        """Cancel any pending hysteresis timer."""
+        if self._hysteresis_timer is not None:
+            self._hysteresis_timer.cancel()
+            self._hysteresis_timer = None
+
+    def _apply_source_state(
+        self, entity_id: str, state: State, record_fallback: bool
+    ) -> None:
+        """Apply state from a source entity.
+
+        Args:
+            entity_id: Source entity ID.
+            state: Source state.
+            record_fallback: Whether to record this as a fallback event.
+        """
+        self._attr_native_value = state.state
+        self._current_source = entity_id
+        self._source_index = self._entities.index(entity_id)
+        self._attr_available = True
+
+        # Copy attributes from source
+        self._copy_attributes_from_source(state)
+
+        if record_fallback:
+            _LOGGER.info(
+                "Fallback sensor '%s' switched to '%s'",
+                self.name,
+                entity_id,
+            )
+            self._record_fallback()
+
+    def _set_unavailable(self, previous_source: str | None) -> None:
+        """Set sensor as unavailable.
+
+        Args:
+            previous_source: Previous source entity ID.
+        """
+        self._attr_native_value = None
+        self._current_source = None
+        self._source_index = None
+        self._attr_available = False
+
+        if previous_source is not None:
+            _LOGGER.warning(
+                "No available source for fallback sensor '%s'",
+                self.name,
+            )
+            self._record_fallback()
 
     def _get_active_entity(self) -> tuple[str | None, State | None]:
         """Get the first available source entity.

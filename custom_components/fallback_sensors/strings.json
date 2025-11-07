@@ -8,7 +8,8 @@
         "data": {
           "name": "Sensor Name",
           "entities": "Source Entities",
-          "unique_id": "Unique ID (optional)"
+          "unique_id": "Unique ID (optional)",
+          "hysteresis_delay": "Hysteresis Delay (0 = disabled)"
         }
       }
     },
@@ -23,7 +24,8 @@
         "description": "Update the configuration of your fallback sensor.",
         "data": {
           "name": "Sensor Name",
-          "entities": "Source Entities"
+          "entities": "Source Entities",
+          "hysteresis_delay": "Hysteresis Delay (0 = disabled)"
         }
       }
     },
