@@ -23,12 +23,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
+from .conditions import ConditionValidator
 from .const import (
     ATTR_CURRENT_SOURCE,
     ATTR_FALLBACK_COUNT,
     ATTR_LAST_FALLBACK_TIME,
     ATTR_SOURCE_ENTITIES,
     ATTR_SOURCE_INDEX,
+    CONF_CONDITIONS,
     CONF_ENTITIES,
     CONF_HYSTERESIS_DELAY,
     DEFAULT_HYSTERESIS_DELAY,
@@ -45,6 +47,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(
             CONF_HYSTERESIS_DELAY, default=DEFAULT_HYSTERESIS_DELAY
         ): cv.positive_int,
+        vol.Optional(CONF_CONDITIONS): vol.All(cv.ensure_list, [dict]),
     }
 )
 
@@ -67,10 +70,13 @@ async def async_setup_platform(
     entities: list[str] = config[CONF_ENTITIES]
     unique_id: str | None = config.get(CONF_UNIQUE_ID)
     hysteresis_delay: int = config[CONF_HYSTERESIS_DELAY]
+    conditions: list[dict[str, Any]] | None = config.get(CONF_CONDITIONS)
 
     _LOGGER.debug("Setting up fallback sensor '%s' with entities: %s", name, entities)
 
-    sensor = FallbackSensor(hass, name, entities, unique_id, None, hysteresis_delay)
+    sensor = FallbackSensor(
+        hass, name, entities, unique_id, None, hysteresis_delay, conditions
+    )
     async_add_entities([sensor], True)
 
 
@@ -92,6 +98,7 @@ async def async_setup_entry(
     hysteresis_delay: int = entry.data.get(
         CONF_HYSTERESIS_DELAY, DEFAULT_HYSTERESIS_DELAY
     )
+    conditions: list[dict[str, Any]] | None = entry.data.get(CONF_CONDITIONS)
 
     _LOGGER.debug(
         "Setting up fallback sensor '%s' from config entry with entities: %s",
@@ -99,7 +106,9 @@ async def async_setup_entry(
         entities,
     )
 
-    sensor = FallbackSensor(hass, name, entities, unique_id, entry, hysteresis_delay)
+    sensor = FallbackSensor(
+        hass, name, entities, unique_id, entry, hysteresis_delay, conditions
+    )
     async_add_entities([sensor], True)
 
 
@@ -117,6 +126,7 @@ class FallbackSensor(SensorEntity):
         unique_id: str | None = None,
         config_entry: ConfigEntry | None = None,
         hysteresis_delay: int = DEFAULT_HYSTERESIS_DELAY,
+        conditions: list[dict[str, Any]] | None = None,
     ) -> None:
         """Initialize the Fallback Sensor.
 
@@ -127,6 +137,7 @@ class FallbackSensor(SensorEntity):
             unique_id: Optional unique identifier.
             config_entry: Optional config entry for UI-configured sensors.
             hysteresis_delay: Delay in seconds before switching sources (0 = disabled).
+            conditions: Optional list of validation conditions.
         """
         self.hass = hass
         self._attr_name = name
@@ -134,6 +145,7 @@ class FallbackSensor(SensorEntity):
         self._entities = entities
         self._config_entry = config_entry
         self._hysteresis_delay = hysteresis_delay
+        self._condition_validator = ConditionValidator(conditions)
 
         # Internal state
         self._attr_native_value: str | None = None
@@ -360,6 +372,15 @@ class FallbackSensor(SensorEntity):
             if state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN, "None"):
                 _LOGGER.debug(
                     "Source entity '%s' is unavailable for fallback sensor '%s'",
+                    entity_id,
+                    self.name,
+                )
+                continue
+
+            # Check custom conditions
+            if not self._condition_validator.is_valid(state):
+                _LOGGER.debug(
+                    "Source entity '%s' does not meet conditions for fallback sensor '%s'",
                     entity_id,
                     self.name,
                 )

@@ -38,6 +38,8 @@ sensor:
 | `name` | string | Oui | Nom du capteur fallback |
 | `entities` | list | Oui | Liste d'entités sources (minimum 2) |
 | `unique_id` | string | Non | Identifiant unique du capteur |
+| `hysteresis_delay` | int | Non | Délai en secondes avant basculement (0 = désactivé) |
+| `conditions` | list | Non | Liste de conditions personnalisées (voir ci-dessous) |
 
 ## Fonctionnement
 
@@ -110,6 +112,47 @@ sensor:
       - sensor.power_meter_zigbee
       - sensor.power_meter_wifi
       - sensor.power_meter_modbus
+```
+
+### Avec hystérésis (évite les basculements rapides)
+
+```yaml
+sensor:
+  - platform: fallback_sensors
+    name: "Température Stable"
+    hysteresis_delay: 30  # Attend 30 secondes avant de basculer
+    entities:
+      - sensor.temp_unstable
+      - sensor.temp_backup
+```
+
+### Avec conditions personnalisées (valeurs valides)
+
+```yaml
+sensor:
+  - platform: fallback_sensors
+    name: "Température Valide"
+    entities:
+      - sensor.temp_sensor1
+      - sensor.temp_sensor2
+    conditions:
+      - type: range
+        min: -20
+        max: 50  # Ignore les valeurs hors plage
+```
+
+### Avec validation par regex
+
+```yaml
+sensor:
+  - platform: fallback_sensors
+    name: "État Capteur"
+    entities:
+      - sensor.state1
+      - sensor.state2
+    conditions:
+      - type: regex
+        pattern: "^(on|off)$"  # Accepte seulement "on" ou "off"
 ```
 
 ## Automatisations

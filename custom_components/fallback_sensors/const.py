@@ -8,6 +8,15 @@ DOMAIN: Final = "fallback_sensors"
 # Configuration keys
 CONF_ENTITIES: Final = "entities"
 CONF_HYSTERESIS_DELAY: Final = "hysteresis_delay"
+CONF_CONDITIONS: Final = "conditions"
+CONF_CONDITION_TYPE: Final = "type"
+CONF_CONDITION_MIN: Final = "min"
+CONF_CONDITION_MAX: Final = "max"
+CONF_CONDITION_PATTERN: Final = "pattern"
+
+# Condition types
+CONDITION_TYPE_RANGE: Final = "range"
+CONDITION_TYPE_REGEX: Final = "regex"
 
 # Attribute keys
 ATTR_CURRENT_SOURCE: Final = "current_source"
