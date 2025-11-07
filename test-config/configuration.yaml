@@ -1,4 +1,4 @@
-# Configuration Home Assistant de test pour Fallback Sensors
+# Home Assistant test configuration for Fallback Sensors
 
 # Loads default set of integrations. Do not remove.
 default_config:
@@ -15,15 +15,15 @@ automation: !include automations.yaml
 script: !include scripts.yaml
 scene: !include scenes.yaml
 
-# Configuration de logging pour debug
+# Logging configuration for debugging
 logger:
   default: info
   logs:
     custom_components.fallback_sensors: debug
 
-# Capteurs de test pour tester le fallback
+# Test sensors
 sensor:
-  # Capteurs simulés pour tester
+  # Simulated sensors for testing
   - platform: template
     sensors:
       test_temp_primary:
@@ -44,7 +44,7 @@ sensor:
         unit_of_measurement: "°C"
         device_class: temperature
 
-  # Exemple de configuration avec Fallback Sensors (via YAML)
+  # Example Fallback Sensors configuration (via YAML)
   - platform: fallback_sensors
     name: "Temperature Fallback Test"
     hysteresis_delay: 5
@@ -57,7 +57,7 @@ sensor:
         min: 15
         max: 30
 
-# Input booleans pour simuler disponibilité
+# Input booleans to simulate availability
 input_boolean:
   test_primary_available:
     name: Test Primary Sensor Available
@@ -67,10 +67,10 @@ input_boolean:
     name: Test Backup Sensor Available
     initial: on
 
-# Automatisations pour simuler les pannes
+# Automations to simulate failures
 automation:
   - id: simulate_primary_failure
-    alias: Simuler panne capteur principal
+    alias: Simulate primary sensor failure
     trigger:
       - platform: state
         entity_id: input_boolean.test_primary_available
@@ -83,7 +83,7 @@ automation:
           value: unavailable
 
   - id: restore_primary
-    alias: Restaurer capteur principal
+    alias: Restore primary sensor
     trigger:
       - platform: state
         entity_id: input_boolean.test_primary_available

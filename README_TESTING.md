@@ -1,38 +1,38 @@
-# Guide de test avec Docker
+# Docker Testing Guide
 
-Ce guide explique comment tester l'intégration Fallback Sensors localement avec Docker.
+This guide explains how to test the Fallback Sensors integration locally with Docker.
 
-## Prérequis
+## Prerequisites
 
-- Docker installé
-- Docker Compose installé
+- Docker installed
+- Docker Compose installed
 
-## Démarrage rapide
+## Quick start
 
 ```bash
-# 1. Démarrer Home Assistant
+# 1. Start Home Assistant
 docker-compose up -d
 
-# 2. Suivre les logs
+# 2. Follow the logs
 docker-compose logs -f homeassistant
 
-# 3. Accéder à Home Assistant
-# Ouvrir http://localhost:8123
-# Premier démarrage : créer un compte utilisateur
+# 3. Access Home Assistant
+# Open http://localhost:8123
+# First start: create a user account
 ```
 
-## Configuration de test
+## Test configuration
 
-### Capteurs simulés
+### Simulated sensors
 
-L'environnement de test inclut 3 capteurs de température simulés :
-- `sensor.test_temp_primary` : Capteur principal (20-25°C)
-- `sensor.test_temp_backup` : Capteur de secours (18-21°C)
-- `sensor.test_temp_fallback` : Capteur de fallback (22-24°C)
+The test environment includes 3 simulated temperature sensors:
+- `sensor.test_temp_primary`: Primary sensor (20-25°C)
+- `sensor.test_temp_backup`: Backup sensor (18-21°C)
+- `sensor.test_temp_fallback`: Fallback sensor (22-24°C)
 
-### Capteur Fallback configuré
+### Pre-configured fallback sensor
 
-Un capteur fallback est pré-configuré dans `test-config/configuration.yaml` :
+A fallback sensor is pre-configured in `test-config/configuration.yaml`:
 ```yaml
 sensor:
   - platform: fallback_sensors
@@ -48,162 +48,162 @@ sensor:
         max: 30
 ```
 
-## Tests manuels
+## Manual tests
 
-### Test 1 : Configuration via UI
+### Test 1: UI configuration
 
-1. **Paramètres** → **Appareils et services**
-2. **Ajouter une intégration**
-3. Rechercher **"Fallback Sensors"**
-4. Configurer :
-   - Nom : "Mon capteur de test"
-   - Entités : sélectionner 2+ capteurs
-   - Hystérésis : 10 secondes
-5. Vérifier que le capteur apparaît dans **États**
+1. **Settings** → **Devices & Services**
+2. **Add Integration**
+3. Search for **"Fallback Sensors"**
+4. Configure:
+   - Name: "My test sensor"
+   - Entities: select 2+ sensors
+   - Hysteresis: 10 seconds
+5. Verify the sensor appears in **States**
 
-### Test 2 : Fallback automatique
+### Test 2: Automatic fallback
 
-1. Aller dans **Outils de développement** → **États**
-2. Observer l'état de `sensor.temperature_fallback_test`
-3. Attributs à vérifier :
-   - `current_source` : doit être `sensor.test_temp_primary`
-   - `source_index` : doit être `0`
-   - `fallback_count` : doit être `0` au début
+1. Go to **Developer Tools** → **States**
+2. Observe the state of `sensor.temperature_fallback_test`
+3. Verify attributes:
+   - `current_source`: should be `sensor.test_temp_primary`
+   - `source_index`: should be `0`
+   - `fallback_count`: should be `0` at start
 
-### Test 3 : Simuler une panne
+### Test 3: Simulate failure
 
-Pour simuler une panne du capteur principal, modifier le fichier `test-config/configuration.yaml` et forcer un état unavailable (nécessite un restart).
+To simulate primary sensor failure, modify `test-config/configuration.yaml` and force an unavailable state (requires restart).
 
-Ou via les outils de développement :
-1. **Outils de développement** → **États**
-2. Trouver `sensor.test_temp_primary`
-3. Modifier l'état temporairement (ne persiste pas)
+Or via developer tools:
+1. **Developer Tools** → **States**
+2. Find `sensor.test_temp_primary`
+3. Temporarily modify the state (doesn't persist)
 
-### Test 4 : Hystérésis
+### Test 4: Hysteresis
 
-1. Observer le capteur fallback
-2. Désactiver temporairement le capteur principal
-3. Le capteur fallback devrait attendre 5 secondes avant de basculer
-4. Vérifier les logs : `docker-compose logs -f homeassistant | grep fallback`
+1. Observe the fallback sensor
+2. Temporarily disable the primary sensor
+3. The fallback sensor should wait 5 seconds before switching
+4. Check logs: `docker-compose logs -f homeassistant | grep fallback`
 
-### Test 5 : Conditions personnalisées
+### Test 5: Custom conditions
 
-Le capteur de test a une condition `range: 15-30°C`.
+The test sensor has a `range: 15-30°C` condition.
 
-Pour tester :
-1. Modifier `test-config/configuration.yaml`
-2. Changer la valeur d'un capteur pour qu'elle soit hors de la plage
-3. Redémarrer : `docker-compose restart`
-4. Observer que le capteur est ignoré
+To test:
+1. Modify `test-config/configuration.yaml`
+2. Change a sensor value to be out of range
+3. Restart: `docker-compose restart`
+4. Observe that the sensor is ignored
 
-## Vérification des logs
+## Log verification
 
 ```bash
-# Logs en temps réel
+# Real-time logs
 docker-compose logs -f homeassistant
 
-# Filtrer uniquement fallback_sensors
+# Filter only fallback_sensors
 docker-compose logs -f homeassistant | grep fallback_sensors
 
-# Logs complets
+# Complete logs
 docker-compose logs homeassistant
 ```
 
-Logs attendus :
+Expected logs:
 ```
 DEBUG (MainThread) [custom_components.fallback_sensors] Setting up fallback sensor 'Temperature Fallback Test'
 INFO (MainThread) [custom_components.fallback_sensors.sensor] Fallback sensor 'Temperature Fallback Test' switched to 'sensor.test_temp_primary'
 ```
 
-## Modifications en temps réel
+## Real-time modifications
 
-L'intégration est montée en lecture seule depuis le code source :
+The integration is mounted read-only from the source code:
 ```yaml
 volumes:
   - ./custom_components/fallback_sensors:/config/custom_components/fallback_sensors:ro
 ```
 
-Pour tester des modifications :
-1. Modifier le code dans `custom_components/fallback_sensors/`
-2. Redémarrer le container : `docker-compose restart`
-3. Les changements sont immédiatement pris en compte
+To test modifications:
+1. Modify the code in `custom_components/fallback_sensors/`
+2. Restart the container: `docker-compose restart`
+3. Changes are immediately applied
 
-## Nettoyage
+## Cleanup
 
 ```bash
-# Arrêter Home Assistant
+# Stop Home Assistant
 docker-compose down
 
-# Supprimer les données de test (base de données, logs, etc.)
+# Remove test data (database, logs, etc.)
 rm -rf test-config/.storage test-config/*.db* test-config/*.log
 
-# Redémarrer propre
+# Clean restart
 docker-compose up -d
 ```
 
-## Débogage
+## Debugging
 
-### Home Assistant ne démarre pas
+### Home Assistant won't start
 
 ```bash
-# Vérifier les logs
+# Check logs
 docker-compose logs homeassistant
 
-# Vérifier la configuration
+# Verify configuration
 docker-compose exec homeassistant python -m homeassistant --script check_config -c /config
 ```
 
-### L'intégration n'apparaît pas
+### Integration doesn't appear
 
-1. Vérifier que le dossier est bien monté :
+1. Verify the folder is mounted:
    ```bash
    docker-compose exec homeassistant ls -la /config/custom_components/fallback_sensors
    ```
 
-2. Vérifier le manifest.json :
+2. Check manifest.json:
    ```bash
    docker-compose exec homeassistant cat /config/custom_components/fallback_sensors/manifest.json
    ```
 
-3. Redémarrer :
+3. Restart:
    ```bash
    docker-compose restart
    ```
 
-### Erreurs Python
+### Python errors
 
 ```bash
-# Shell interactif dans le container
+# Interactive shell in container
 docker-compose exec homeassistant bash
 
-# Tester l'import Python
+# Test Python import
 python3 -c "from custom_components.fallback_sensors.sensor import FallbackSensor; print('OK')"
 ```
 
-## Accès aux fichiers de configuration
+## Configuration file access
 
-Les fichiers de configuration sont dans `test-config/` :
-- `configuration.yaml` : Configuration principale
-- `automations.yaml` : Automatisations
-- `scripts.yaml` : Scripts
-- `scenes.yaml` : Scènes
+Configuration files are in `test-config/`:
+- `configuration.yaml`: Main configuration
+- `automations.yaml`: Automations
+- `scripts.yaml`: Scripts
+- `scenes.yaml`: Scenes
 
-Modifier ces fichiers et redémarrer pour tester différentes configurations.
+Modify these files and restart to test different configurations.
 
-## Interface Web
+## Web interface
 
-Home Assistant est accessible sur : **http://localhost:8123**
+Home Assistant is accessible at: **http://localhost:8123**
 
-Lors du premier démarrage :
-1. Créer un compte utilisateur
-2. Configurer nom et localisation
-3. Accepter les paramètres par défaut
+On first start:
+1. Create a user account
+2. Configure name and location
+3. Accept default settings
 
-## Tests avancés
+## Advanced tests
 
-### Test des conditions regex
+### Test regex conditions
 
-Ajouter dans `test-config/configuration.yaml` :
+Add to `test-config/configuration.yaml`:
 ```yaml
 sensor:
   - platform: fallback_sensors
@@ -216,9 +216,9 @@ sensor:
         pattern: "^on$"
 ```
 
-### Test du fallback_count
+### Test fallback_count
 
-Créer une automatisation qui compte les basculements :
+Create an automation that counts fallbacks:
 ```yaml
 automation:
   - alias: "Count Fallbacks"
@@ -229,29 +229,29 @@ automation:
     action:
       - service: persistent_notification.create
         data:
-          title: "Fallback détecté"
-          message: "Le capteur a basculé {{ trigger.to_state.attributes.fallback_count }} fois"
+          title: "Fallback detected"
+          message: "Sensor has switched {{ trigger.to_state.attributes.fallback_count }} times"
 ```
 
-## Commandes utiles
+## Useful commands
 
 ```bash
-# Démarrer en arrière-plan
+# Start in background
 docker-compose up -d
 
-# Arrêter
+# Stop
 docker-compose down
 
-# Redémarrer
+# Restart
 docker-compose restart
 
-# Voir les logs
+# View logs
 docker-compose logs -f
 
-# Shell dans le container
+# Shell in container
 docker-compose exec homeassistant bash
 
-# Rebuilder l'image
+# Rebuild image
 docker-compose pull
 docker-compose up -d --force-recreate
 ```

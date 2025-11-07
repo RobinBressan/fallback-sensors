@@ -1,170 +1,170 @@
 # Fallback Sensors for Home Assistant
 
-Une intégration custom pour Home Assistant qui permet de créer des capteurs avec fallback automatique. Le principe est simple : vous définissez une liste d'entités sources, et le capteur utilise automatiquement la première qui est disponible.
+A custom integration for Home Assistant that creates sensors with automatic fallback. The principle is simple: you define a list of source entities, and the sensor automatically uses the first available one.
 
 ## Installation
 
-### HACS (recommandé)
+### HACS (recommended)
 
-1. Ajoutez ce repository comme repository custom dans HACS
-2. Recherchez "Fallback Sensors" dans HACS
-3. Cliquez sur "Télécharger"
-4. Redémarrez Home Assistant
+1. Add this repository as a custom repository in HACS
+2. Search for "Fallback Sensors" in HACS
+3. Click "Download"
+4. Restart Home Assistant
 
-### Installation manuelle
+### Manual installation
 
-1. Copiez le dossier `custom_components/fallback_sensors` dans votre dossier `config/custom_components/`
-2. Redémarrez Home Assistant
+1. Copy the `custom_components/fallback_sensors` folder to your `config/custom_components/` directory
+2. Restart Home Assistant
 
 ## Configuration
 
-Ajoutez la configuration dans votre fichier `configuration.yaml` :
+Add the configuration to your `configuration.yaml` file:
 
 ```yaml
 sensor:
   - platform: fallback_sensors
-    name: "Température Salon"
-    unique_id: "temp_salon_fallback"  # optionnel
+    name: "Living Room Temperature"
+    unique_id: "temp_living_room_fallback"  # optional
     entities:
       - sensor.temperature_primary
       - sensor.temperature_zigbee_backup
       - sensor.temperature_wifi_backup
 ```
 
-### Paramètres
+### Parameters
 
-| Paramètre | Type | Requis | Description |
-|-----------|------|--------|-------------|
-| `name` | string | Oui | Nom du capteur fallback |
-| `entities` | list | Oui | Liste d'entités sources (minimum 2) |
-| `unique_id` | string | Non | Identifiant unique du capteur |
-| `hysteresis_delay` | int | Non | Délai en secondes avant basculement (0 = désactivé) |
-| `conditions` | list | Non | Liste de conditions personnalisées (voir ci-dessous) |
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Name of the fallback sensor |
+| `entities` | list | Yes | List of source entities (minimum 2) |
+| `unique_id` | string | No | Unique identifier for the sensor |
+| `hysteresis_delay` | int | No | Delay in seconds before switching (0 = disabled) |
+| `conditions` | list | No | List of custom conditions (see below) |
 
-## Fonctionnement
+## How it works
 
-### Logique de fallback
+### Fallback logic
 
-1. Le capteur parcourt la liste d'entités dans l'ordre
-2. Il utilise la première entité dont l'état est **disponible**
-3. Une entité est considérée **indisponible** si son état est :
+1. The sensor iterates through the list of entities in order
+2. It uses the first entity whose state is **available**
+3. An entity is considered **unavailable** if its state is:
    - `unavailable`
    - `unknown`
    - `None`
 
-4. Si toutes les entités sont indisponibles, le capteur passe en état `unavailable`
+4. If all entities are unavailable, the sensor becomes `unavailable`
 
-### Attributs copiés
+### Inherited attributes
 
-Le capteur hérite automatiquement des attributs de la source active :
-- `unit_of_measurement` (unité de mesure)
-- `device_class` (classe d'appareil)
-- `state_class` (classe d'état)
-- `icon` (icône)
+The sensor automatically inherits attributes from the active source:
+- `unit_of_measurement` (unit of measurement)
+- `device_class` (device class)
+- `state_class` (state class)
+- `icon` (icon)
 
-### Attributs supplémentaires
+### Additional attributes
 
-Le capteur expose des attributs de diagnostic :
+The sensor exposes diagnostic attributes:
 
 ```yaml
-current_source: sensor.temperature_primary  # Source actuellement utilisée
-source_entities:                             # Liste complète des sources
+current_source: sensor.temperature_primary  # Currently used source
+source_entities:                             # Complete list of sources
   - sensor.temperature_primary
   - sensor.temperature_zigbee_backup
   - sensor.temperature_wifi_backup
-source_index: 0                              # Index de la source active (0 = primaire)
-fallback_count: 3                            # Nombre de basculements depuis le démarrage
-last_fallback_time: "2025-11-07T10:30:00"   # Timestamp du dernier basculement
+source_index: 0                              # Index of active source (0 = primary)
+fallback_count: 3                            # Number of switches since startup
+last_fallback_time: "2025-11-07T10:30:00"   # Timestamp of last switch
 ```
 
-## Exemples d'utilisation
+## Usage examples
 
-### Température avec fallback
+### Temperature with fallback
 
 ```yaml
 sensor:
   - platform: fallback_sensors
-    name: "Température Maison"
+    name: "House Temperature"
     entities:
       - sensor.temp_thermostat
       - sensor.temp_xiaomi
       - sensor.temp_shelly
 ```
 
-### Humidité avec fallback
+### Humidity with fallback
 
 ```yaml
 sensor:
   - platform: fallback_sensors
-    name: "Humidité Salle de bain"
+    name: "Bathroom Humidity"
     entities:
       - sensor.humidity_primary
       - sensor.humidity_backup
 ```
 
-### Consommation énergétique
+### Energy consumption
 
 ```yaml
 sensor:
   - platform: fallback_sensors
-    name: "Consommation Totale"
+    name: "Total Consumption"
     entities:
       - sensor.power_meter_zigbee
       - sensor.power_meter_wifi
       - sensor.power_meter_modbus
 ```
 
-### Avec hystérésis (évite les basculements rapides)
+### With hysteresis (prevents rapid switching)
 
 ```yaml
 sensor:
   - platform: fallback_sensors
-    name: "Température Stable"
-    hysteresis_delay: 30  # Attend 30 secondes avant de basculer
+    name: "Stable Temperature"
+    hysteresis_delay: 30  # Wait 30 seconds before switching
     entities:
       - sensor.temp_unstable
       - sensor.temp_backup
 ```
 
-### Avec conditions personnalisées (valeurs valides)
+### With custom conditions (valid values)
 
 ```yaml
 sensor:
   - platform: fallback_sensors
-    name: "Température Valide"
+    name: "Valid Temperature"
     entities:
       - sensor.temp_sensor1
       - sensor.temp_sensor2
     conditions:
       - type: range
         min: -20
-        max: 50  # Ignore les valeurs hors plage
+        max: 50  # Ignore out-of-range values
 ```
 
-### Avec validation par regex
+### With regex validation
 
 ```yaml
 sensor:
   - platform: fallback_sensors
-    name: "État Capteur"
+    name: "Sensor State"
     entities:
       - sensor.state1
       - sensor.state2
     conditions:
       - type: regex
-        pattern: "^(on|off)$"  # Accepte seulement "on" ou "off"
+        pattern: "^(on|off)$"  # Accept only "on" or "off"
 ```
 
-## Automatisations
+## Automations
 
-### Notification lors de basculement
+### Notification on fallback
 
 ```yaml
 automation:
-  - alias: "Alerte basculement capteur température"
+  - alias: "Temperature sensor fallback alert"
     trigger:
       - platform: state
-        entity_id: sensor.temperature_salon
+        entity_id: sensor.living_room_temperature
         attribute: current_source
     condition:
       - condition: template
@@ -172,36 +172,36 @@ automation:
     action:
       - service: notify.mobile_app
         data:
-          title: "Capteur température basculé"
+          title: "Temperature sensor switched"
           message: >
-            Le capteur a basculé de {{ trigger.from_state.attributes.current_source }}
-            vers {{ trigger.to_state.attributes.current_source }}
+            Sensor switched from {{ trigger.from_state.attributes.current_source }}
+            to {{ trigger.to_state.attributes.current_source }}
 ```
 
-### Surveillance du nombre de basculements
+### Monitor fallback count
 
 ```yaml
 automation:
-  - alias: "Trop de basculements"
+  - alias: "Too many fallbacks"
     trigger:
       - platform: state
-        entity_id: sensor.temperature_salon
+        entity_id: sensor.living_room_temperature
         attribute: fallback_count
     condition:
       - condition: template
-        value_template: "{{ state_attr('sensor.temperature_salon', 'fallback_count') | int > 10 }}"
+        value_template: "{{ state_attr('sensor.living_room_temperature', 'fallback_count') | int > 10 }}"
     action:
       - service: persistent_notification.create
         data:
-          title: "Problème de capteur détecté"
+          title: "Sensor issue detected"
           message: >
-            Le capteur {{ trigger.entity_id }} a basculé {{ state_attr(trigger.entity_id, 'fallback_count') }} fois.
-            Vérifiez vos capteurs sources.
+            Sensor {{ trigger.entity_id }} has switched {{ state_attr(trigger.entity_id, 'fallback_count') }} times.
+            Check your source sensors.
 ```
 
 ## Debugging
 
-Activez les logs de debug dans `configuration.yaml` :
+Enable debug logs in `configuration.yaml`:
 
 ```yaml
 logger:
@@ -210,72 +210,76 @@ logger:
     custom_components.fallback_sensors: debug
 ```
 
-Les logs vous indiqueront :
-- Quand un capteur change de source
-- Quand une source devient indisponible
-- Les erreurs de configuration
+Logs will show:
+- When a sensor changes source
+- When a source becomes unavailable
+- Configuration errors
 
-## Cas d'usage
+## Use cases
 
-### Problème : Capteurs Zigbee instables
-**Solution** : Utilisez un capteur Wifi comme backup
-
-```yaml
-sensor:
-  - platform: fallback_sensors
-    name: "Température stable"
-    entities:
-      - sensor.temp_zigbee  # Parfois instable
-      - sensor.temp_wifi    # Plus stable mais moins précis
-```
-
-### Problème : Maintenance des capteurs
-**Solution** : Gardez un capteur de secours pendant le remplacement
+### Problem: Unstable Zigbee sensors
+**Solution**: Use a WiFi sensor as backup
 
 ```yaml
 sensor:
   - platform: fallback_sensors
-    name: "Production solaire"
+    name: "Stable Temperature"
     entities:
-      - sensor.solar_new     # Nouveau capteur en test
-      - sensor.solar_old     # Ancien capteur fiable
+      - sensor.temp_zigbee  # Sometimes unstable
+      - sensor.temp_wifi    # More stable but less accurate
 ```
 
-### Problème : Différentes sources de données
-**Solution** : Priorisez vos sources par fiabilité
+### Problem: Sensor maintenance
+**Solution**: Keep a backup sensor during replacement
 
 ```yaml
 sensor:
   - platform: fallback_sensors
-    name: "Prix électricité"
+    name: "Solar Production"
     entities:
-      - sensor.price_api_provider1  # API principale
-      - sensor.price_api_provider2  # API de backup
-      - sensor.price_static         # Valeur fixe en dernier recours
+      - sensor.solar_new     # New sensor being tested
+      - sensor.solar_old     # Old reliable sensor
 ```
 
-## Limitations et notes
+### Problem: Multiple data sources
+**Solution**: Prioritize your sources by reliability
 
-1. **Minimum 2 entités** : La configuration exige au moins 2 entités sources
-2. **Pas d'hystérésis** : Le capteur bascule immédiatement (peut être ajouté dans une future version)
-3. **Types mixtes** : Vous pouvez mélanger différents types de capteurs, mais c'est à vos risques (ex: température → humidité)
-4. **Ordre important** : Les entités sont testées dans l'ordre configuré
+```yaml
+sensor:
+  - platform: fallback_sensors
+    name: "Electricity Price"
+    entities:
+      - sensor.price_api_provider1  # Main API
+      - sensor.price_api_provider2  # Backup API
+      - sensor.price_static         # Fixed value as last resort
+```
 
-## Support et contributions
+## Limitations and notes
 
-- **Issues** : [GitHub Issues](https://github.com/RobinBressan/fallback-sensors/issues)
-- **Discussions** : [GitHub Discussions](https://github.com/RobinBressan/fallback-sensors/discussions)
-- **Pull Requests** : Les contributions sont les bienvenues !
+1. **Minimum 2 entities**: Configuration requires at least 2 source entities
+2. **No hysteresis by default**: Sensor switches immediately (can be configured)
+3. **Mixed types**: You can mix different sensor types, but at your own risk (e.g., temperature → humidity)
+4. **Order matters**: Entities are tested in the configured order
+
+## Support and contributions
+
+- **Issues**: [GitHub Issues](https://github.com/RobinBressan/fallback-sensors/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/RobinBressan/fallback-sensors/discussions)
+- **Pull Requests**: Contributions are welcome!
 
 ## License
 
-MIT License - Voir le fichier LICENSE pour plus de détails
+MIT License - See LICENSE file for details
 
 ## Changelog
 
 ### v1.0.0 (2025-11-07)
-- Version initiale
-- Fallback séquentiel
-- Copie automatique des attributs
-- Listeners event-driven
-- Attributs de diagnostic
+- Initial release
+- Sequential fallback logic
+- Automatic attribute copying
+- Event-driven listeners
+- Diagnostic attributes
+- UI configuration support (Config Flow)
+- Hysteresis support (0-300 seconds)
+- Custom conditions (range and regex)
+- Comprehensive unit tests
