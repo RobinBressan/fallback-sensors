@@ -1,0 +1,18 @@
+{
+  "title": "Fallback Sensors",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Fallback Sensor",
+        "description": "Configure a sensor that falls back to alternative sources when the primary is unavailable.",
+        "data": {
+          "name": "Sensor Name",
+          "entities": "Source Entities (comma-separated)"
+        }
+      }
+    },
+    "error": {
+      "invalid_entities": "At least 2 entities are required"
+    }
+  }
+}

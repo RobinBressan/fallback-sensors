@@ -1,0 +1,12 @@
+{
+  "domain": "fallback_sensors",
+  "name": "Fallback Sensors",
+  "codeowners": [],
+  "config_flow": false,
+  "dependencies": [],
+  "documentation": "https://github.com/yourusername/fallback-sensors",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/yourusername/fallback-sensors/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}
