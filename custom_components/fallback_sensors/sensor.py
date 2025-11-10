@@ -147,6 +147,10 @@ class FallbackSensor(SensorEntity):
         self._hysteresis_delay = hysteresis_delay
         self._condition_validator = ConditionValidator(conditions)
 
+        # Set entity_id based on unique_id if provided, otherwise use name
+        if unique_id:
+            self.entity_id = f"sensor.{unique_id}"
+
         # Internal state
         self._attr_native_value: str | None = None
         self._current_source: str | None = None

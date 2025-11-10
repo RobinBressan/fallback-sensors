@@ -28,20 +28,22 @@ Add the configuration to your `configuration.yaml` file:
 sensor:
   - platform: fallback_sensors
     name: "Living Room Temperature"
-    unique_id: "temp_living_room_fallback"  # optional
+    unique_id: "temp_living_room_fallback"  # Creates sensor.temp_living_room_fallback
     entities:
       - sensor.temperature_primary
       - sensor.temperature_zigbee_backup
       - sensor.temperature_wifi_backup
 ```
 
+**Note:** If `unique_id` is provided, it will be used to generate the entity_id (`sensor.<unique_id>`). If omitted, the entity_id will be generated from the `name` parameter.
+
 ### Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `name` | string | Yes | Name of the fallback sensor |
+| `name` | string | Yes | Friendly name displayed in the UI |
 | `entities` | list | Yes | List of source entities (minimum 2) |
-| `unique_id` | string | No | Unique identifier for the sensor |
+| `unique_id` | string | No | Unique identifier - also used to generate entity_id (e.g., `unique_id: temp_room` → `sensor.temp_room`) |
 | `hysteresis_delay` | int | No | Delay in seconds before switching (0 = disabled) |
 | `conditions` | list | No | List of custom conditions (see below) |
 
