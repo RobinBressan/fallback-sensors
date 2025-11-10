@@ -28,22 +28,22 @@ Add the configuration to your `configuration.yaml` file:
 sensor:
   - platform: fallback_sensors
     name: "Living Room Temperature"
-    unique_id: "temp_living_room_fallback"  # Creates sensor.temp_living_room_fallback
+    unique_id: "temp_living_room_fallback"  # Optional, enables UI customization
     entities:
       - sensor.temperature_primary
       - sensor.temperature_zigbee_backup
       - sensor.temperature_wifi_backup
 ```
 
-**Note:** If `unique_id` is provided, it will be used to generate the entity_id (`sensor.<unique_id>`). If omitted, the entity_id will be generated from the `name` parameter.
+**Note:** The `unique_id` is optional but recommended. It enables you to customize the entity (name, icon, entity_id) via the Home Assistant UI after creation.
 
 ### Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `name` | string | Yes | Friendly name displayed in the UI |
+| `name` | string | Yes | Friendly name displayed in the UI (also used to generate entity_id) |
 | `entities` | list | Yes | List of source entities (minimum 2) |
-| `unique_id` | string | No | Unique identifier - also used to generate entity_id (e.g., `unique_id: temp_room` → `sensor.temp_room`) |
+| `unique_id` | string | No | Unique identifier for the sensor (enables UI customization) |
 | `hysteresis_delay` | int | No | Delay in seconds before switching (0 = disabled) |
 | `conditions` | list | No | List of custom conditions (see below) |
 
