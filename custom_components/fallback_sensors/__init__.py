@@ -73,5 +73,7 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """
     _LOGGER.debug("Reloading Fallback Sensors config entry: %s", entry.entry_id)
 
-    await async_unload_entry(hass, entry)
+    if not await async_unload_entry(hass, entry):
+        return
+
     await async_setup_entry(hass, entry)

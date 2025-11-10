@@ -132,7 +132,12 @@ class FallbackSensorsOptionsFlow(config_entries.OptionsFlow):
             if len(entities) < 2:
                 errors[CONF_ENTITIES] = "min_entities"
             else:
-                return self.async_create_entry(title="", data=user_input)
+                # Update the config entry data, not just options
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data=user_input,
+                )
+                return self.async_create_entry(title="", data={})
 
         # Get current configuration
         current_name = self.config_entry.data.get(CONF_NAME, DEFAULT_NAME)
