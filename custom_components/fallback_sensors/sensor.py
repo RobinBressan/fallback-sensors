@@ -10,6 +10,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
+from homeassistant.util import dt as dt_util
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_NAME,
@@ -147,10 +148,6 @@ class FallbackSensor(SensorEntity):
         self._hysteresis_delay = hysteresis_delay
         self._condition_validator = ConditionValidator(conditions)
 
-        # Set entity_id based on unique_id if provided, otherwise use name
-        if unique_id:
-            self.entity_id = f"sensor.{unique_id}"
-
         # Internal state
         self._attr_native_value: str | None = None
         self._current_source: str | None = None
@@ -186,6 +183,16 @@ class FallbackSensor(SensorEntity):
             "Fallback sensor '%s' added with %d source entities",
             self.name,
             len(self._entities),
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Clean up when entity is removed from Home Assistant."""
+        # Cancel any pending hysteresis timer
+        self._cancel_hysteresis_timer()
+
+        _LOGGER.debug(
+            "Fallback sensor '%s' removed",
+            self.name,
         )
 
     @callback
@@ -252,7 +259,7 @@ class FallbackSensor(SensorEntity):
         if self._pending_source == new_source:
             # Check if enough time has passed
             if self._pending_since is not None:
-                elapsed = (datetime.now() - self._pending_since).total_seconds()
+                elapsed = (dt_util.utcnow() - self._pending_since).total_seconds()
                 if elapsed >= self._hysteresis_delay:
                     # Time has passed, apply the change
                     self._cancel_hysteresis_timer()
@@ -265,7 +272,7 @@ class FallbackSensor(SensorEntity):
         # New pending source, start tracking
         self._cancel_hysteresis_timer()
         self._pending_source = new_source
-        self._pending_since = datetime.now()
+        self._pending_since = dt_util.utcnow()
 
         _LOGGER.debug(
             "Fallback sensor '%s': pending switch from '%s' to '%s' (delay: %ds)",
@@ -278,7 +285,7 @@ class FallbackSensor(SensorEntity):
         # Schedule the change
         self._hysteresis_timer = self.hass.loop.call_later(
             self._hysteresis_delay,
-            lambda: asyncio.create_task(self._apply_pending_source()),
+            lambda: self.hass.async_create_task(self._apply_pending_source()),
         )
 
     async def _apply_pending_source(self) -> None:
@@ -410,7 +417,7 @@ class FallbackSensor(SensorEntity):
     def _record_fallback(self) -> None:
         """Record a fallback event."""
         self._fallback_count += 1
-        self._last_fallback_time = datetime.now()
+        self._last_fallback_time = dt_util.utcnow()
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
