@@ -35,6 +35,13 @@ from .const import (
     DEFAULT_HYSTERESIS_DELAY,
     DEFAULT_NAME,
 )
+from .loop_guard import (
+    async_filter_sources,
+    async_find_loop,
+    async_register_sources,
+    async_resolve_entity_id,
+    async_unregister_sources,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,6 +79,17 @@ async def async_setup_platform(
     conditions: list[dict[str, Any]] | None = config.get(CONF_CONDITIONS)
 
     _LOGGER.debug("Setting up fallback sensor '%s' with entities: %s", name, entities)
+
+    own_entity_id = async_resolve_entity_id(hass, name)
+    if error := async_find_loop(hass, own_entity_id, entities):
+        _LOGGER.error(
+            "Refusing to set up fallback sensor '%s': its source list would make "
+            "it depend on itself (%s). Fix the 'entities' list in your YAML "
+            "configuration",
+            name,
+            error,
+        )
+        return
 
     sensor = FallbackSensor(
         hass, name, entities, unique_id, None, hysteresis_delay, conditions
@@ -166,6 +184,20 @@ class FallbackSensor(SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Register callbacks when entity is added to Home Assistant."""
+        # Last line of defence against a state event feedback loop: a source
+        # that resolves back to this sensor is dropped rather than listened to.
+        safe, rejected = async_filter_sources(self.hass, self.entity_id, self._entities)
+        if rejected:
+            _LOGGER.error(
+                "Fallback sensor '%s' ignores the source(s) %s: they would make "
+                "the sensor depend on its own state",
+                self.entity_id,
+                ", ".join(rejected),
+            )
+            self._entities = safe
+
+        async_register_sources(self.hass, self.entity_id, self._entities)
+
         # Set up listeners for all source entities
         for entity_id in self._entities:
             self.async_on_remove(
@@ -188,6 +220,8 @@ class FallbackSensor(SensorEntity):
         # Cancel any pending hysteresis timer
         self._cancel_hysteresis_timer()
 
+        async_unregister_sources(self.hass, self.entity_id)
+
         _LOGGER.debug(
             "Fallback sensor '%s' removed",
             self.name,
@@ -200,9 +234,20 @@ class FallbackSensor(SensorEntity):
         Args:
             event: State change event.
         """
+        entity_id = event.data.get("entity_id")
+        if entity_id == self.entity_id:
+            # Never react to our own state writes: that is the feedback loop
+            # the loop guard exists to prevent.
+            _LOGGER.error(
+                "Fallback sensor '%s' received its own state change event and "
+                "ignored it",
+                self.entity_id,
+            )
+            return
+
         _LOGGER.debug(
             "Source entity '%s' changed for fallback sensor '%s'",
-            event.data.get("entity_id"),
+            entity_id,
             self.name,
         )
         self._update_from_sources()

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -65,3 +66,29 @@ def setup_entry(
         return entry
 
     return _setup
+
+
+@pytest.fixture
+def integration_logs() -> Iterator[list[str]]:
+    """Collect the log messages emitted by the integration.
+
+    The `caplog` fixture cannot be used here: the one
+    `pytest-homeassistant-custom-component` installs overrides the built-in
+    fixture of the same name, which pytest 9 reports as a recursive dependency.
+    """
+    messages: list[str] = []
+
+    class _Collector(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            messages.append(record.getMessage())
+
+    logger = logging.getLogger("custom_components.fallback_sensors")
+    handler = _Collector(level=logging.DEBUG)
+    previous_level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+    try:
+        yield messages
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
