@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 import logging
 import math
@@ -27,6 +28,7 @@ from homeassistant.helpers.event import (
     async_call_later,
     async_track_state_change_event,
 )
+from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.util import dt as dt_util
 import voluptuous as vol
@@ -149,7 +151,50 @@ async def async_setup_entry(
     async_add_entities([sensor], True)
 
 
-class FallbackSensor(SensorEntity):
+@dataclass
+class FallbackSensorExtraStoredData(ExtraStoredData):
+    """Traceability counters kept across restarts."""
+
+    fallback_count: int
+    last_fallback_time: datetime | None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a JSON serializable representation.
+
+        Returns:
+            Dictionary stored by the restore state helper.
+        """
+        return {
+            "fallback_count": self.fallback_count,
+            "last_fallback_time": (
+                self.last_fallback_time.isoformat() if self.last_fallback_time else None
+            ),
+        }
+
+    @classmethod
+    def from_dict(
+        cls, restored: dict[str, Any]
+    ) -> FallbackSensorExtraStoredData | None:
+        """Rebuild the counters from a stored representation.
+
+        Args:
+            restored: Dictionary previously produced by `as_dict`.
+
+        Returns:
+            The restored counters, or None when the data is unusable.
+        """
+        try:
+            fallback_count = int(restored["fallback_count"])
+        except (KeyError, TypeError, ValueError):
+            return None
+
+        raw_time = restored.get("last_fallback_time")
+        last_fallback_time = dt_util.parse_datetime(raw_time) if raw_time else None
+
+        return cls(fallback_count, last_fallback_time)
+
+
+class FallbackSensor(RestoreEntity, SensorEntity):
     """Representation of a Fallback Sensor.
 
     This sensor monitors multiple source entities and uses the first available one.
@@ -208,8 +253,22 @@ class FallbackSensor(SensorEntity):
         self._attr_state_class: SensorStateClass | str | None = None
         self._attr_icon: str | None = None
 
+    @property
+    def extra_restore_state_data(self) -> FallbackSensorExtraStoredData:
+        """Return the counters to store for the next restart.
+
+        Returns:
+            Traceability counters of this sensor.
+        """
+        return FallbackSensorExtraStoredData(
+            self._fallback_count, self._last_fallback_time
+        )
+
     async def async_added_to_hass(self) -> None:
         """Register callbacks when entity is added to Home Assistant."""
+        await super().async_added_to_hass()
+        await self._async_restore_counters()
+
         # Last line of defence against a state event feedback loop: a source
         # that resolves back to this sensor is dropped rather than listened to.
         safe, rejected = async_filter_sources(self.hass, self.entity_id, self._entities)
@@ -239,6 +298,28 @@ class FallbackSensor(SensorEntity):
             "Fallback sensor '%s' added with %d source entities",
             self.name,
             len(self._entities),
+        )
+
+    async def _async_restore_counters(self) -> None:
+        """Restore the traceability counters from the previous run."""
+        if (last_extra_data := await self.async_get_last_extra_data()) is None:
+            return
+
+        restored = FallbackSensorExtraStoredData.from_dict(last_extra_data.as_dict())
+        if restored is None:
+            _LOGGER.debug(
+                "Fallback sensor '%s' could not restore its counters", self.entity_id
+            )
+            return
+
+        self._fallback_count = restored.fallback_count
+        self._last_fallback_time = restored.last_fallback_time
+
+        _LOGGER.debug(
+            "Fallback sensor '%s' restored %d fallback(s), last one at %s",
+            self.entity_id,
+            self._fallback_count,
+            self._last_fallback_time,
         )
 
     async def async_will_remove_from_hass(self) -> None:
