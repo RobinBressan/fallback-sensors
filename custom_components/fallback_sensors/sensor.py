@@ -4,9 +4,15 @@ from __future__ import annotations
 
 from datetime import datetime
 import logging
-from typing import Any
+import math
+from typing import Any, Final
 
-from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
+from homeassistant.components.sensor import (
+    NON_NUMERIC_DEVICE_CLASSES,
+    PLATFORM_SCHEMA,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_NAME,
@@ -47,6 +53,17 @@ from .loop_guard import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# State classes that survive a source switch. `total` and `total_increasing`
+# describe a meter whose value only makes sense relative to the counter that
+# produced it: switching between two counters makes the long term statistics
+# jump, so the state class is dropped instead of being propagated.
+FORWARDED_STATE_CLASSES: Final = frozenset(
+    {
+        SensorStateClass.MEASUREMENT,
+        SensorStateClass.MEASUREMENT_ANGLE,
+    }
+)
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
@@ -171,7 +188,7 @@ class FallbackSensor(SensorEntity):
         self._condition_validator = ConditionValidator(conditions)
 
         # Internal state
-        self._attr_native_value: str | None = None
+        self._attr_native_value: int | float | str | None = None
         self._current_source: str | None = None
         self._source_index: int | None = None
         self._fallback_count: int = 0
@@ -188,7 +205,7 @@ class FallbackSensor(SensorEntity):
         # Attributes from source
         self._attr_native_unit_of_measurement: str | None = None
         self._attr_device_class: str | None = None
-        self._attr_state_class: str | None = None
+        self._attr_state_class: SensorStateClass | str | None = None
         self._attr_icon: str | None = None
 
     async def async_added_to_hass(self) -> None:
@@ -413,13 +430,14 @@ class FallbackSensor(SensorEntity):
             state: Source state.
             record_fallback: Whether to record this as a fallback event.
         """
-        self._attr_native_value = state.state
         self._current_source = entity_id
         self._source_index = self._entities.index(entity_id)
         self._attr_available = True
 
-        # Copy attributes from source
+        # Copy attributes from source first: whether the value is expected to
+        # be numeric depends on them.
         self._copy_attributes_from_source(state)
+        self._attr_native_value = self._parse_native_value(state.state)
 
         if record_fallback:
             _LOGGER.info(
@@ -503,8 +521,81 @@ class FallbackSensor(SensorEntity):
             "unit_of_measurement"
         )
         self._attr_device_class = state.attributes.get("device_class")
-        self._attr_state_class = state.attributes.get("state_class")
         self._attr_icon = state.attributes.get("icon")
+
+        state_class = state.attributes.get("state_class")
+        if state_class is None or state_class in FORWARDED_STATE_CLASSES:
+            self._attr_state_class = state_class
+        else:
+            # A cumulative state class must not follow a source switch: see
+            # FORWARDED_STATE_CLASSES.
+            _LOGGER.debug(
+                "Fallback sensor '%s' does not propagate the '%s' state class "
+                "of source '%s'",
+                self.name,
+                state_class,
+                state.entity_id,
+            )
+            self._attr_state_class = None
+
+    def _numeric_state_expected(self) -> bool:
+        """Tell whether Home Assistant expects a numeric value for this sensor.
+
+        Mirrors the rule Home Assistant applies to sensor entities, based on the
+        attributes this sensor exposes after copying them from its source.
+
+        Returns:
+            True when the state must be numeric.
+        """
+        if self._attr_device_class in NON_NUMERIC_DEVICE_CLASSES:
+            return False
+
+        return (
+            self._attr_state_class is not None
+            or self._attr_native_unit_of_measurement is not None
+            or self._attr_device_class is not None
+        )
+
+    def _parse_native_value(self, value: str) -> int | float | str:
+        """Convert a source state to the type Home Assistant expects.
+
+        Integers are parsed as integers so the state is rendered exactly as the
+        source rendered it: `"7"` stays `7`, not `7.0`.
+
+        Args:
+            value: Raw state string of the source entity.
+
+        Returns:
+            The value as an int or a float when the sensor is expected to be
+            numeric and the conversion succeeds, the original string otherwise.
+        """
+        if not self._numeric_state_expected():
+            return value
+
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            pass
+
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            _LOGGER.debug(
+                "Fallback sensor '%s' keeps the non numeric state '%s' as is",
+                self.name,
+                value,
+            )
+            return value
+
+        if not math.isfinite(numeric_value):
+            _LOGGER.debug(
+                "Fallback sensor '%s' keeps the non finite state '%s' as is",
+                self.name,
+                value,
+            )
+            return value
+
+        return numeric_value
 
     def _record_fallback(self) -> None:
         """Record a fallback event."""
