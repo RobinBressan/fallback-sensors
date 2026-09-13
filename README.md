@@ -35,6 +35,18 @@ sensor:
       - sensor.temperature_wifi_backup
 ```
 
+### UI configuration
+
+Everything the YAML platform exposes except `conditions` lists of more than one
+range and one pattern can also be set from **Settings → Devices & Services →
+Add Integration → Fallback Sensors**, and edited afterwards through the entry's
+**Configure** button: name, source entities, hysteresis delay, and the
+validation conditions (minimum, maximum, pattern). Leaving a condition field
+empty disables that condition.
+
+A sensor created through the UI stores a `conditions` list built from those
+fields, in the same format as the YAML one.
+
 **Note:** The `unique_id` is optional but recommended. It enables you to customize the entity (name, icon, entity_id) via the Home Assistant UI after creation.
 
 ### Parameters

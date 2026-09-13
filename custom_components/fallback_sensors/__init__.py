@@ -9,9 +9,14 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
+from .const import CONF_CONDITIONS
+
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
+
+# Bumped when the config flow started storing the `conditions` key.
+CURRENT_VERSION = 2
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -46,6 +51,45 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # The listener persists through reloads
     if not entry.update_listeners:
         entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate a config entry to the current version.
+
+    Version 1 entries were written before the config flow could store
+    conditions. Nothing is lost: the key is simply added, empty.
+
+    Args:
+        hass: Home Assistant instance.
+        entry: Config entry instance.
+
+    Returns:
+        True when the entry can be loaded, False when it comes from a newer
+        version of the integration.
+    """
+    if entry.version > CURRENT_VERSION:
+        _LOGGER.error(
+            "Config entry '%s' was created by a newer version of Fallback "
+            "Sensors (version %s) and cannot be loaded",
+            entry.title,
+            entry.version,
+        )
+        return False
+
+    if entry.version < CURRENT_VERSION:
+        _LOGGER.debug(
+            "Migrating Fallback Sensors config entry '%s' from version %s to %s",
+            entry.title,
+            entry.version,
+            CURRENT_VERSION,
+        )
+        data = {**entry.data}
+        data.setdefault(CONF_CONDITIONS, [])
+        hass.config_entries.async_update_entry(
+            entry, data=data, version=CURRENT_VERSION
+        )
 
     return True
 

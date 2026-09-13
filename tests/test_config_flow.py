@@ -142,13 +142,10 @@ async def test_options_flow_reloads_the_sensor(
 async def test_options_flow_preserves_unexposed_keys(
     hass: HomeAssistant, setup_entry
 ) -> None:
-    """Saving the options form keeps unique_id and conditions untouched."""
+    """Saving the options form keeps the keys the form does not expose."""
     hass.states.async_set(PRIMARY, "21.5")
     hass.states.async_set(BACKUP, "19.0")
-    entry = await setup_entry(
-        unique_id="my_unique_id",
-        conditions=[{"type": "range", "min": 0, "max": 50}],
-    )
+    entry = await setup_entry(unique_id="my_unique_id")
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     await hass.config_entries.options.async_configure(
@@ -158,7 +155,6 @@ async def test_options_flow_preserves_unexposed_keys(
     await hass.async_block_till_done()
 
     assert entry.data["unique_id"] == "my_unique_id"
-    assert entry.data["conditions"] == [{"type": "range", "min": 0, "max": 50}]
 
 
 async def test_options_flow_rejects_self_reference(

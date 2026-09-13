@@ -4,19 +4,24 @@
     "step": {
       "user": {
         "title": "Set up Fallback Sensor",
-        "description": "Configure a sensor that falls back to alternative sources when the primary is unavailable.",
+        "description": "Configure a sensor that falls back to alternative sources when the primary is unavailable. A source is only used when its value passes every condition you set here. Leave a field empty to disable the corresponding condition.",
         "data": {
           "name": "Sensor Name",
           "entities": "Source Entities",
-          "unique_id": "Unique ID (optional)",
-          "hysteresis_delay": "Hysteresis Delay (0 = disabled)"
+          "hysteresis_delay": "Hysteresis Delay (0 = disabled)",
+          "condition_min": "Minimum valid value (optional)",
+          "condition_max": "Maximum valid value (optional)",
+          "condition_pattern": "Validation pattern, regular expression (optional)",
+          "unique_id": "Unique ID (optional)"
         }
       }
     },
     "error": {
       "min_entities": "At least 2 entities are required",
       "self_reference": "A fallback sensor cannot use itself as a source",
-      "circular_reference": "One of the selected entities is a fallback sensor that already depends on this one, which would create a feedback loop"
+      "circular_reference": "One of the selected entities is a fallback sensor that already depends on this one, which would create a feedback loop",
+      "invalid_range": "The minimum value must not be greater than the maximum value",
+      "invalid_regex": "This is not a valid regular expression"
     },
     "abort": {
       "already_configured": "A fallback sensor with this unique ID already exists"
@@ -26,18 +31,23 @@
     "step": {
       "init": {
         "title": "Update Fallback Sensor",
-        "description": "Update the configuration of your fallback sensor.",
+        "description": "Update the configuration of your fallback sensor. A source is only used when its value passes every condition you set here. Leave a field empty to disable the corresponding condition.",
         "data": {
           "name": "Sensor Name",
           "entities": "Source Entities",
-          "hysteresis_delay": "Hysteresis Delay (0 = disabled)"
+          "hysteresis_delay": "Hysteresis Delay (0 = disabled)",
+          "condition_min": "Minimum valid value (optional)",
+          "condition_max": "Maximum valid value (optional)",
+          "condition_pattern": "Validation pattern, regular expression (optional)"
         }
       }
     },
     "error": {
       "min_entities": "At least 2 entities are required",
       "self_reference": "A fallback sensor cannot use itself as a source",
-      "circular_reference": "One of the selected entities is a fallback sensor that already depends on this one, which would create a feedback loop"
+      "circular_reference": "One of the selected entities is a fallback sensor that already depends on this one, which would create a feedback loop",
+      "invalid_range": "The minimum value must not be greater than the maximum value",
+      "invalid_regex": "This is not a valid regular expression"
     }
   }
 }
