@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from homeassistant.core import State
 
 from custom_components.fallback_sensors.conditions import ConditionValidator

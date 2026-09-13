@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
 import logging
 from typing import Any
 
-import voluptuous as vol
-
 from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
-from homeassistant.util import dt as dt_util
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_NAME,
@@ -23,6 +19,8 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
+from homeassistant.util import dt as dt_util
+import voluptuous as vol
 
 from .conditions import ConditionValidator
 from .const import (
@@ -391,7 +389,8 @@ class FallbackSensor(SensorEntity):
             # Check custom conditions
             if not self._condition_validator.is_valid(state):
                 _LOGGER.debug(
-                    "Source entity '%s' does not meet conditions for fallback sensor '%s'",
+                    "Source entity '%s' does not meet conditions for "
+                    "fallback sensor '%s'",
                     entity_id,
                     self.name,
                 )

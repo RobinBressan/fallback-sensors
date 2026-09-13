@@ -1,3 +1,7 @@
-# Test dependencies for Fallback Sensors integration
-pytest>=7.4.0
-pytest-homeassistant-custom-component>=0.13.0
+# Test dependencies for Fallback Sensors integration.
+#
+# pytest-homeassistant-custom-component is pinned to the release that ships
+# Home Assistant 2026.7.4 (the last 2026.7.x patch). Bumping this pin is how the
+# integration is re-targeted at a newer Home Assistant minor.
+pytest-homeassistant-custom-component==0.13.348
+ruff==0.14.5

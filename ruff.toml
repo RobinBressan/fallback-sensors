@@ -1,0 +1,19 @@
+target-version = "py314"
+line-length = 88
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+
+[lint.isort]
+force-sort-within-sections = true
+known-first-party = ["custom_components", "tests"]
+combine-as-imports = true

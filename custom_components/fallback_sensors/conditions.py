@@ -85,9 +85,7 @@ class ConditionValidator:
             _LOGGER.warning("Unknown condition type: %s", condition_type)
             return True
 
-    def _check_range_condition(
-        self, state: State, condition: dict[str, Any]
-    ) -> bool:
+    def _check_range_condition(self, state: State, condition: dict[str, Any]) -> bool:
         """Check if state value is within a numeric range.
 
         Args:
@@ -127,9 +125,7 @@ class ConditionValidator:
 
         return True
 
-    def _check_regex_condition(
-        self, state: State, condition: dict[str, Any]
-    ) -> bool:
+    def _check_regex_condition(self, state: State, condition: dict[str, Any]) -> bool:
         """Check if state value matches a regex pattern.
 
         Args:

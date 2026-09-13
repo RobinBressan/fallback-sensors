@@ -1,3 +1,24 @@
+# Testing Guide
+
+## Automated test suite
+
+The integration ships a `pytest` suite running against a real Home Assistant
+instance through `pytest-homeassistant-custom-component`, pinned in
+`requirements_test.txt` to the release matching the targeted Home Assistant
+minor (currently 2026.7.x, which requires Python 3.14).
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements_test.txt
+
+pytest                # run the suite
+ruff check .          # lint
+ruff format --check . # formatting
+```
+
+The same three checks, plus `hassfest` and HACS validation, run on every push
+and pull request (`.github/workflows/validate.yml`).
+
 # Docker Testing Guide
 
 This guide explains how to test the Fallback Sensors integration locally with Docker.
