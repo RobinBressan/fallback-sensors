@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import Event, HomeAssistant
+from homeassistant.helpers.entity_component import DATA_INSTANCES, EntityComponent
 from homeassistant.setup import async_setup_component
 
 from custom_components.fallback_sensors.const import (
@@ -11,6 +12,7 @@ from custom_components.fallback_sensors.const import (
     ATTR_SOURCE_ENTITIES,
     ATTR_SOURCE_INDEX,
 )
+from custom_components.fallback_sensors.loop_guard import async_get_source_registry
 
 from .conftest import BACKUP, PRIMARY, TEST_ENTITY_ID
 
@@ -187,3 +189,103 @@ async def test_yaml_setup(hass: HomeAssistant) -> None:
     state = hass.states.get("sensor.yaml_fallback")
     assert state is not None
     assert state.state == "21.5"
+
+
+async def test_existing_entry_with_self_reference_drops_the_source(
+    hass: HomeAssistant, setup_entry, integration_logs: list[str]
+) -> None:
+    """A stored configuration that references the sensor itself is neutralised."""
+    hass.states.async_set(PRIMARY, "21.5")
+    await setup_entry(entities=[TEST_ENTITY_ID, PRIMARY])
+
+    state = hass.states.get(TEST_ENTITY_ID)
+    assert state.state == "21.5"
+    # The looping source is dropped, the remaining one still works.
+    assert state.attributes[ATTR_SOURCE_ENTITIES] == [PRIMARY]
+    assert any(
+        "would make the sensor depend on its own state" in message
+        for message in integration_logs
+    )
+
+
+async def test_existing_entry_with_circular_reference_drops_the_source(
+    hass: HomeAssistant, setup_entry, build_entry
+) -> None:
+    """A source chain looping back to the sensor is neutralised."""
+    hass.states.async_set(PRIMARY, "21.5")
+    await setup_entry(name="Other", entities=[TEST_ENTITY_ID, PRIMARY])
+
+    entry = build_entry(entities=["sensor.other", PRIMARY])
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(TEST_ENTITY_ID)
+    assert state.attributes[ATTR_SOURCE_ENTITIES] == [PRIMARY]
+
+
+async def test_yaml_setup_refuses_a_self_referencing_configuration(
+    hass: HomeAssistant, integration_logs: list[str]
+) -> None:
+    """A looping YAML configuration does not create a sensor at all."""
+    hass.states.async_set(PRIMARY, "21.5")
+
+    assert await async_setup_component(
+        hass,
+        "sensor",
+        {
+            "sensor": {
+                "platform": "fallback_sensors",
+                "name": "Yaml Loop",
+                "entities": ["sensor.yaml_loop", PRIMARY],
+            }
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.yaml_loop") is None
+    assert any(
+        "Refusing to set up fallback sensor" in message for message in integration_logs
+    )
+
+
+async def test_sources_are_unregistered_on_unload(
+    hass: HomeAssistant, setup_entry
+) -> None:
+    """Unloading an entry removes it from the dependency registry."""
+    hass.states.async_set(PRIMARY, "21.5")
+    entry = await setup_entry()
+
+    assert TEST_ENTITY_ID in async_get_source_registry(hass)
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert TEST_ENTITY_ID not in async_get_source_registry(hass)
+
+
+async def test_own_state_event_is_ignored(
+    hass: HomeAssistant, setup_entry, integration_logs: list[str]
+) -> None:
+    """A state event for the sensor itself never reaches the update logic."""
+    hass.states.async_set(PRIMARY, "21.5")
+    await setup_entry()
+
+    component: EntityComponent = hass.data[DATA_INSTANCES]["sensor"]
+    entity = component.get_entity(TEST_ENTITY_ID)
+    assert entity is not None
+
+    event = Event(
+        EVENT_STATE_CHANGED,
+        {
+            "entity_id": TEST_ENTITY_ID,
+            "old_state": None,
+            "new_state": hass.states.get(TEST_ENTITY_ID),
+        },
+    )
+    entity._handle_source_change(event)
+
+    assert any(
+        "received its own state change event and ignored it" in message
+        for message in integration_logs
+    )

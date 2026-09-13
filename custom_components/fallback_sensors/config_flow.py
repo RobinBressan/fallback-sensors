@@ -7,7 +7,7 @@ from typing import Any
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME, CONF_UNIQUE_ID
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -19,8 +19,86 @@ from .const import (
     DEFAULT_NAME,
     DOMAIN,
 )
+from .loop_guard import async_find_loop, async_resolve_entity_id
 
 _LOGGER = logging.getLogger(__name__)
+
+MIN_ENTITIES = 2
+
+
+@callback
+def _async_validate_input(
+    hass: HomeAssistant,
+    user_input: dict[str, Any],
+    entry: config_entries.ConfigEntry | None = None,
+) -> dict[str, str]:
+    """Validate the entities submitted through a flow.
+
+    Args:
+        hass: Home Assistant instance.
+        user_input: Submitted form values.
+        entry: Config entry being edited, if any.
+
+    Returns:
+        Mapping of field name to error key, empty when the input is valid.
+    """
+    entities: list[str] = user_input.get(CONF_ENTITIES, [])
+
+    if len(entities) < MIN_ENTITIES:
+        return {CONF_ENTITIES: "min_entities"}
+
+    own_entity_id = async_resolve_entity_id(
+        hass, user_input.get(CONF_NAME, DEFAULT_NAME), entry
+    )
+    if error := async_find_loop(hass, own_entity_id, entities):
+        return {CONF_ENTITIES: error}
+
+    return {}
+
+
+def _async_build_schema(
+    defaults: dict[str, Any], *, include_unique_id: bool
+) -> vol.Schema:
+    """Build the form schema shared by the config and options flows.
+
+    Args:
+        defaults: Current values used as form defaults.
+        include_unique_id: Whether to offer the unique ID field.
+
+    Returns:
+        Voluptuous schema for the form.
+    """
+    schema: dict[Any, Any] = {
+        vol.Required(
+            CONF_NAME, default=defaults.get(CONF_NAME, DEFAULT_NAME)
+        ): cv.string,
+        vol.Required(
+            CONF_ENTITIES, default=defaults.get(CONF_ENTITIES, [])
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                multiple=True,
+            ),
+        ),
+    }
+
+    if include_unique_id:
+        schema[vol.Optional(CONF_UNIQUE_ID)] = cv.string
+
+    schema[
+        vol.Optional(
+            CONF_HYSTERESIS_DELAY,
+            default=defaults.get(CONF_HYSTERESIS_DELAY, DEFAULT_HYSTERESIS_DELAY),
+        )
+    ] = selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=0,
+            max=300,
+            unit_of_measurement="seconds",
+            mode=selector.NumberSelectorMode.BOX,
+        ),
+    )
+
+    return vol.Schema(schema)
 
 
 class FallbackSensorsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -30,7 +108,7 @@ class FallbackSensorsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Handle the initial step.
 
         Args:
@@ -42,11 +120,8 @@ class FallbackSensorsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Validate entities list
-            entities = user_input.get(CONF_ENTITIES, [])
-            if len(entities) < 2:
-                errors[CONF_ENTITIES] = "min_entities"
-            else:
+            errors = _async_validate_input(self.hass, user_input)
+            if not errors:
                 # Check for duplicate configuration
                 await self.async_set_unique_id(user_input.get(CONF_UNIQUE_ID))
                 self._abort_if_unique_id_configured()
@@ -56,32 +131,9 @@ class FallbackSensorsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data=user_input,
                 )
 
-        # Show configuration form
-        data_schema = vol.Schema(
-            {
-                vol.Required(CONF_NAME, default=DEFAULT_NAME): cv.string,
-                vol.Required(CONF_ENTITIES): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        multiple=True,
-                    ),
-                ),
-                vol.Optional(CONF_UNIQUE_ID): cv.string,
-                vol.Optional(
-                    CONF_HYSTERESIS_DELAY, default=DEFAULT_HYSTERESIS_DELAY
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0,
-                        max=300,
-                        unit_of_measurement="seconds",
-                        mode=selector.NumberSelectorMode.BOX,
-                    ),
-                ),
-            }
-        )
-
         return self.async_show_form(
             step_id="user",
-            data_schema=data_schema,
+            data_schema=_async_build_schema(user_input or {}, include_unique_id=True),
             errors=errors,
         )
 
@@ -93,28 +145,26 @@ class FallbackSensorsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Get the options flow for this handler.
 
         Args:
-            config_entry: Config entry instance.
+            config_entry: Config entry instance, provided by Home Assistant and
+                exposed to the flow through `OptionsFlow.config_entry`.
 
         Returns:
             Options flow instance.
         """
-        return FallbackSensorsOptionsFlow(config_entry)
+        return FallbackSensorsOptionsFlow()
 
 
 class FallbackSensorsOptionsFlow(config_entries.OptionsFlow):
-    """Handle options flow for Fallback Sensors."""
+    """Handle options flow for Fallback Sensors.
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow.
-
-        Args:
-            config_entry: Config entry instance.
-        """
-        self.config_entry = config_entry
+    The config entry is provided by the base class through the read-only
+    `config_entry` property; assigning to it raises `AttributeError` since
+    Home Assistant 2025.12.
+    """
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Manage the options.
 
         Args:
@@ -126,52 +176,23 @@ class FallbackSensorsOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Validate entities list
-            entities = user_input.get(CONF_ENTITIES, [])
-            if len(entities) < 2:
-                errors[CONF_ENTITIES] = "min_entities"
-            else:
-                # Update the config entry data and title
+            errors = _async_validate_input(self.hass, user_input, self.config_entry)
+            if not errors:
+                # Preserve the keys the options form does not expose.
+                data = {**self.config_entry.data, **user_input}
                 self.hass.config_entries.async_update_entry(
                     self.config_entry,
                     title=user_input[CONF_NAME],
-                    data=user_input,
+                    data=data,
                 )
                 return self.async_create_entry(title="", data={})
 
-        # Get current configuration
-        current_name = self.config_entry.data.get(CONF_NAME, DEFAULT_NAME)
-        current_entities = self.config_entry.data.get(CONF_ENTITIES, [])
-        current_hysteresis = self.config_entry.data.get(
-            CONF_HYSTERESIS_DELAY, DEFAULT_HYSTERESIS_DELAY
-        )
-
-        # Show options form
-        options_schema = vol.Schema(
-            {
-                vol.Required(CONF_NAME, default=current_name): cv.string,
-                vol.Required(
-                    CONF_ENTITIES, default=current_entities
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        multiple=True,
-                    ),
-                ),
-                vol.Optional(
-                    CONF_HYSTERESIS_DELAY, default=current_hysteresis
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0,
-                        max=300,
-                        unit_of_measurement="seconds",
-                        mode=selector.NumberSelectorMode.BOX,
-                    ),
-                ),
-            }
+        defaults = (
+            user_input if user_input is not None else dict(self.config_entry.data)
         )
 
         return self.async_show_form(
             step_id="init",
-            data_schema=options_schema,
+            data_schema=_async_build_schema(defaults, include_unique_id=False),
             errors=errors,
         )

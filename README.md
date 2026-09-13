@@ -60,6 +60,28 @@ sensor:
 
 4. If all entities are unavailable, the sensor becomes `unavailable`
 
+### Feedback loop protection
+
+A fallback sensor writes its own state whenever one of its sources changes. If
+a source resolved back to the sensor itself — directly, or through a chain of
+other fallback sensors — every write would re-trigger the listener and flood
+Home Assistant with state change events.
+
+The integration refuses such configurations:
+
+- the UI setup and options forms reject a source list where the sensor is its
+  own source (`self_reference`) or where a selected fallback sensor already
+  depends on this one (`circular_reference`);
+- a YAML configuration that would loop is not set up, and the reason is logged;
+- as a last resort, a looping source found at runtime (for example in a
+  configuration stored before this check existed) is dropped from the source
+  list with an error in the log, so the sensor keeps working with its remaining
+  sources;
+- a state event for the sensor's own entity is never acted upon.
+
+Chaining fallback sensors is still supported, as long as the chain does not
+come back to its starting point.
+
 ### Inherited attributes
 
 The sensor automatically inherits attributes from the active source:
@@ -266,6 +288,8 @@ sensor:
 2. **No hysteresis by default**: Sensor switches immediately (can be configured)
 3. **Mixed types**: You can mix different sensor types, but at your own risk (e.g., temperature → humidity)
 4. **Order matters**: Entities are tested in the configured order
+5. **No self-reference**: A sensor cannot use itself, or a fallback sensor that
+   depends on it, as a source (see *Feedback loop protection*)
 
 ## Support and contributions
 

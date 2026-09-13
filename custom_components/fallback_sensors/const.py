@@ -5,6 +5,12 @@ from typing import Final
 # Domain
 DOMAIN: Final = "fallback_sensors"
 
+# hass.data keys
+DATA_SOURCES: Final = "sources"
+
+# Entity ID format used to predict the entity ID of a not-yet-created sensor
+ENTITY_ID_FORMAT: Final = "sensor.{}"
+
 # Configuration keys
 CONF_ENTITIES: Final = "entities"
 CONF_HYSTERESIS_DELAY: Final = "hysteresis_delay"
