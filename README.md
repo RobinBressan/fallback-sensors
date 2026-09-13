@@ -151,8 +151,10 @@ last_fallback_time: "2025-11-07T10:30:00"   # Timestamp of last switch
 
 `fallback_count` counts the source switches that happened after the sensor
 started: selecting the first source at startup is not a fallback, so a sensor
-whose primary source never fails keeps a count of `0`. The counter is reset
-when Home Assistant restarts or the entry is reloaded.
+whose primary source never fails keeps a count of `0`. Both `fallback_count`
+and `last_fallback_time` are restored across Home Assistant restarts and entry
+reloads, so they measure the reliability of your sources over time rather than
+since the last restart. Removing and re-adding the sensor starts over at zero.
 
 ```yaml
 ```
