@@ -372,13 +372,4 @@ MIT License - See LICENSE file for details
 
 ## Changelog
 
-### v1.0.0 (2025-11-07)
-- Initial release
-- Sequential fallback logic
-- Automatic attribute copying
-- Event-driven listeners
-- Diagnostic attributes
-- UI configuration support (Config Flow)
-- Hysteresis support (0-300 seconds)
-- Custom conditions (range and regex)
-- Comprehensive unit tests
+See [CHANGELOG.md](CHANGELOG.md).
