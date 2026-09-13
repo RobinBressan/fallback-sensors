@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from homeassistant import config_entries
@@ -13,6 +14,13 @@ import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 
 from .const import (
+    CONDITION_TYPE_RANGE,
+    CONDITION_TYPE_REGEX,
+    CONF_CONDITION_MAX,
+    CONF_CONDITION_MIN,
+    CONF_CONDITION_PATTERN,
+    CONF_CONDITION_TYPE,
+    CONF_CONDITIONS,
     CONF_ENTITIES,
     CONF_HYSTERESIS_DELAY,
     DEFAULT_HYSTERESIS_DELAY,
@@ -24,6 +32,92 @@ from .loop_guard import async_find_loop, async_resolve_entity_id
 _LOGGER = logging.getLogger(__name__)
 
 MIN_ENTITIES = 2
+
+# Form-only keys. Conditions are stored as the list the YAML platform uses;
+# the form exposes the two shapes that list can take.
+FORM_CONDITION_MIN = "condition_min"
+FORM_CONDITION_MAX = "condition_max"
+FORM_CONDITION_PATTERN = "condition_pattern"
+FORM_ONLY_KEYS = (FORM_CONDITION_MIN, FORM_CONDITION_MAX, FORM_CONDITION_PATTERN)
+
+
+def _conditions_to_form(conditions: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Flatten a stored condition list into form values.
+
+    Args:
+        conditions: Conditions stored on the config entry.
+
+    Returns:
+        Mapping of form key to current value.
+    """
+    values: dict[str, Any] = {}
+
+    for condition in conditions or []:
+        condition_type = condition.get(CONF_CONDITION_TYPE)
+
+        if condition_type == CONDITION_TYPE_RANGE:
+            if (minimum := condition.get(CONF_CONDITION_MIN)) is not None:
+                values[FORM_CONDITION_MIN] = minimum
+            if (maximum := condition.get(CONF_CONDITION_MAX)) is not None:
+                values[FORM_CONDITION_MAX] = maximum
+        elif condition_type == CONDITION_TYPE_REGEX and (
+            pattern := condition.get(CONF_CONDITION_PATTERN)
+        ):
+            values[FORM_CONDITION_PATTERN] = pattern
+
+    return values
+
+
+def _form_to_conditions(user_input: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build the stored condition list from form values.
+
+    Args:
+        user_input: Submitted form values.
+
+    Returns:
+        Condition list in the format the sensor platform consumes.
+    """
+    conditions: list[dict[str, Any]] = []
+
+    minimum = user_input.get(FORM_CONDITION_MIN)
+    maximum = user_input.get(FORM_CONDITION_MAX)
+    if minimum is not None or maximum is not None:
+        condition: dict[str, Any] = {CONF_CONDITION_TYPE: CONDITION_TYPE_RANGE}
+        if minimum is not None:
+            condition[CONF_CONDITION_MIN] = minimum
+        if maximum is not None:
+            condition[CONF_CONDITION_MAX] = maximum
+        conditions.append(condition)
+
+    if pattern := (user_input.get(FORM_CONDITION_PATTERN) or "").strip():
+        conditions.append(
+            {
+                CONF_CONDITION_TYPE: CONDITION_TYPE_REGEX,
+                CONF_CONDITION_PATTERN: pattern,
+            }
+        )
+
+    return conditions
+
+
+def _build_entry_data(
+    user_input: dict[str, Any], base: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Turn form values into the data stored on the config entry.
+
+    Args:
+        user_input: Submitted form values.
+        base: Existing entry data to preserve, if any.
+
+    Returns:
+        Data dictionary to store on the config entry.
+    """
+    data = {**(base or {}), **user_input}
+    for key in FORM_ONLY_KEYS:
+        data.pop(key, None)
+
+    data[CONF_CONDITIONS] = _form_to_conditions(user_input)
+    return data
 
 
 @callback
@@ -52,6 +146,17 @@ def _async_validate_input(
     )
     if error := async_find_loop(hass, own_entity_id, entities):
         return {CONF_ENTITIES: error}
+
+    minimum = user_input.get(FORM_CONDITION_MIN)
+    maximum = user_input.get(FORM_CONDITION_MAX)
+    if minimum is not None and maximum is not None and minimum > maximum:
+        return {FORM_CONDITION_MIN: "invalid_range"}
+
+    if pattern := (user_input.get(FORM_CONDITION_PATTERN) or "").strip():
+        try:
+            re.compile(pattern)
+        except re.error:
+            return {FORM_CONDITION_PATTERN: "invalid_regex"}
 
     return {}
 
@@ -98,13 +203,30 @@ def _async_build_schema(
         ),
     )
 
+    # Conditions are optional and have no default: leaving a field empty
+    # removes the corresponding condition.
+    number_selector = selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            mode=selector.NumberSelectorMode.BOX,
+            step="any",
+        ),
+    )
+    for key, field_selector in (
+        (FORM_CONDITION_MIN, number_selector),
+        (FORM_CONDITION_MAX, number_selector),
+        (FORM_CONDITION_PATTERN, selector.TextSelector()),
+    ):
+        schema[
+            vol.Optional(key, description={"suggested_value": defaults.get(key)})
+        ] = field_selector
+
     return vol.Schema(schema)
 
 
 class FallbackSensorsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Fallback Sensors."""
 
-    VERSION = 1
+    VERSION = 2
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -128,7 +250,7 @@ class FallbackSensorsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 return self.async_create_entry(
                     title=user_input[CONF_NAME],
-                    data=user_input,
+                    data=_build_entry_data(user_input),
                 )
 
         return self.async_show_form(
@@ -179,17 +301,18 @@ class FallbackSensorsOptionsFlow(config_entries.OptionsFlow):
             errors = _async_validate_input(self.hass, user_input, self.config_entry)
             if not errors:
                 # Preserve the keys the options form does not expose.
-                data = {**self.config_entry.data, **user_input}
                 self.hass.config_entries.async_update_entry(
                     self.config_entry,
                     title=user_input[CONF_NAME],
-                    data=data,
+                    data=_build_entry_data(user_input, self.config_entry.data),
                 )
                 return self.async_create_entry(title="", data={})
 
-        defaults = (
-            user_input if user_input is not None else dict(self.config_entry.data)
-        )
+        if user_input is not None:
+            defaults = dict(user_input)
+        else:
+            defaults = dict(self.config_entry.data)
+            defaults.update(_conditions_to_form(defaults.get(CONF_CONDITIONS)))
 
         return self.async_show_form(
             step_id="init",

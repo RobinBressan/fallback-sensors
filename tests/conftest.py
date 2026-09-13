@@ -39,6 +39,7 @@ def build_entry() -> Callable[..., MockConfigEntry]:
         *,
         name: str = TEST_NAME,
         hysteresis_delay: int = 0,
+        version: int | None = None,
         **extra: Any,
     ) -> MockConfigEntry:
         data: dict[str, Any] = {
@@ -47,7 +48,11 @@ def build_entry() -> Callable[..., MockConfigEntry]:
             CONF_HYSTERESIS_DELAY: hysteresis_delay,
             **extra,
         }
-        return MockConfigEntry(domain=DOMAIN, title=name, data=data)
+        kwargs: dict[str, Any] = {}
+        if version is not None:
+            kwargs["version"] = version
+
+        return MockConfigEntry(domain=DOMAIN, title=name, data=data, **kwargs)
 
     return _build
 
