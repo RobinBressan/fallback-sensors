@@ -99,8 +99,40 @@ come back to its starting point.
 The sensor automatically inherits attributes from the active source:
 - `unit_of_measurement` (unit of measurement)
 - `device_class` (device class)
-- `state_class` (state class)
+- `state_class` (state class, **only when it is `measurement`**, see below)
 - `icon` (icon)
+
+#### Why `total` and `total_increasing` are not inherited
+
+`measurement` describes an instantaneous reading: the value of the backup
+sensor means the same thing as the value of the primary one, so the long term
+statistics stay consistent across a switch.
+
+`total` and `total_increasing` describe a *meter*. Its value only makes sense
+relative to the counter that produced it, and two counters are never at the
+same reading. Forwarding that state class would let the long term statistics
+interpret a switch as a real jump — a huge consumption spike when the backup
+counter is ahead, or a meter reset when it is behind. Either way the energy
+dashboard is corrupted, and long term statistics are not something you can
+simply recompute.
+
+So a source declaring `total` or `total_increasing` is still used normally —
+its value, unit, device class and icon are forwarded — but the fallback sensor
+does not declare a state class and is therefore left out of long term
+statistics. If you need statistics on a cumulative source, apply the fallback
+upstream (a `utility_meter` or a template sensor fed by the fallback sensor),
+where you control how the counters are reconciled.
+
+`measurement_angle`, which describes an instantaneous angle, is treated like
+`measurement`.
+
+#### Value type
+
+The state of the active source is exposed as a number when the sensor is a
+numeric one (it declares a unit, a numeric device class or a state class), and
+as a string otherwise. Integers stay integers, so the rendered value is exactly
+the one the source rendered. A value that cannot be converted — or that is
+infinite or NaN — is forwarded unchanged rather than dropped.
 
 ### Additional attributes
 
@@ -310,6 +342,9 @@ sensor:
 4. **Order matters**: Entities are tested in the configured order
 5. **No self-reference**: A sensor cannot use itself, or a fallback sensor that
    depends on it, as a source (see *Feedback loop protection*)
+6. **No long term statistics on cumulative sources**: `total` and
+   `total_increasing` state classes are not forwarded (see *Inherited
+   attributes*)
 
 ## Support and contributions
 
