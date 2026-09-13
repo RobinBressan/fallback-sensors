@@ -14,10 +14,13 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-from homeassistant.core import Event, HomeAssistant, State, callback
+from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, State, callback
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_state_change_event,
+)
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.util import dt as dt_util
 import voluptuous as vol
@@ -135,6 +138,9 @@ class FallbackSensor(SensorEntity):
     This sensor monitors multiple source entities and uses the first available one.
     """
 
+    # Fully event driven: the state is recomputed from source state changes.
+    _attr_should_poll = False
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -171,10 +177,13 @@ class FallbackSensor(SensorEntity):
         self._fallback_count: int = 0
         self._last_fallback_time: datetime | None = None
 
-        # Hysteresis tracking
+        # Hysteresis tracking. A switch is pending if, and only if,
+        # `_pending_since` is set: `_pending_source` may legitimately be None,
+        # meaning "no source left, go unavailable once the delay has elapsed".
         self._pending_source: str | None = None
         self._pending_since: datetime | None = None
-        self._hysteresis_timer: Any = None
+        self._hysteresis_timer: CALLBACK_TYPE | None = None
+        self._initialized: bool = False
 
         # Attributes from source
         self._attr_native_unit_of_measurement: str | None = None
@@ -218,7 +227,7 @@ class FallbackSensor(SensorEntity):
     async def async_will_remove_from_hass(self) -> None:
         """Clean up when entity is removed from Home Assistant."""
         # Cancel any pending hysteresis timer
-        self._cancel_hysteresis_timer()
+        self._clear_pending_source()
 
         async_unregister_sources(self.hass, self.entity_id)
 
@@ -234,86 +243,77 @@ class FallbackSensor(SensorEntity):
         Args:
             event: State change event.
         """
-        entity_id = event.data.get("entity_id")
-        if entity_id == self.entity_id:
-            # Never react to our own state writes: that is the feedback loop
-            # the loop guard exists to prevent.
-            _LOGGER.error(
-                "Fallback sensor '%s' received its own state change event and "
-                "ignored it",
+        try:
+            entity_id = event.data.get("entity_id")
+            if entity_id == self.entity_id:
+                # Never react to our own state writes: that is the feedback loop
+                # the loop guard exists to prevent.
+                _LOGGER.error(
+                    "Fallback sensor '%s' received its own state change event and "
+                    "ignored it",
+                    self.entity_id,
+                )
+                return
+
+            _LOGGER.debug(
+                "Source entity '%s' changed for fallback sensor '%s'",
+                entity_id,
+                self.name,
+            )
+            self._update_from_sources()
+            self.async_write_ha_state()
+        except Exception:  # an event listener must never raise
+            _LOGGER.exception(
+                "Unexpected error while handling a source change for fallback "
+                "sensor '%s'",
                 self.entity_id,
             )
-            return
-
-        _LOGGER.debug(
-            "Source entity '%s' changed for fallback sensor '%s'",
-            entity_id,
-            self.name,
-        )
-        self._update_from_sources()
-        self.async_write_ha_state()
 
     def _update_from_sources(self) -> None:
-        """Update the sensor state from the first available source entity."""
-        previous_source = self._current_source
+        """Recompute the sensor state from the ordered list of sources.
 
-        # Find the first available source
+        Decides whether the switch happens now or after the hysteresis delay,
+        but never applies it twice: `_apply_active_source` is the only place
+        where the state, the current source and the fallback counter change.
+        """
+        previous_source = self._current_source
         active_entity_id, active_state = self._get_active_entity()
 
-        # Check if source would change
-        if active_entity_id != previous_source:
-            self._handle_source_change_with_hysteresis(
-                active_entity_id, active_state, previous_source
+        if active_entity_id == previous_source:
+            # Same source: abandon any pending switch and refresh the value.
+            self._clear_pending_source()
+            self._apply_active_source(
+                active_entity_id, active_state, previous_source, record_fallback=False
             )
-        else:
-            # Same source, cancel any pending changes
-            self._cancel_hysteresis_timer()
-            self._pending_source = None
-            self._pending_since = None
+            return
 
-            # Update state from current source
-            if active_state is not None:
-                self._apply_source_state(active_entity_id, active_state, False)
-            else:
-                self._set_unavailable(previous_source)
+        if self._hysteresis_delay == 0 or not self._initialized:
+            # Hysteresis disabled, or first evaluation: apply straight away.
+            self._clear_pending_source()
+            self._apply_active_source(
+                active_entity_id,
+                active_state,
+                previous_source,
+                record_fallback=self._initialized,
+            )
+            return
 
-    def _handle_source_change_with_hysteresis(
-        self,
-        new_source: str | None,
-        new_state: State | None,
-        previous_source: str | None,
+        if self._pending_since is not None and self._pending_source == active_entity_id:
+            # Already waiting for this exact switch; the timer will apply it.
+            return
+
+        self._start_pending_source(active_entity_id, previous_source)
+
+    def _start_pending_source(
+        self, new_source: str | None, previous_source: str | None
     ) -> None:
-        """Handle source change with hysteresis delay.
+        """Arm the hysteresis timer for a switch to `new_source`.
 
         Args:
-            new_source: New source entity ID.
-            new_state: New source state.
-            previous_source: Previous source entity ID.
+            new_source: Source entity ID to switch to, None to go unavailable.
+            previous_source: Source entity ID currently in use.
         """
-        # If hysteresis is disabled or this is the first source, apply immediately
-        if self._hysteresis_delay == 0 or previous_source is None:
-            if new_state is not None:
-                self._apply_source_state(new_source, new_state, True)
-            else:
-                self._set_unavailable(previous_source)
-            return
-
-        # Check if we're already tracking a pending change to this source
-        if self._pending_source == new_source:
-            # Check if enough time has passed
-            if self._pending_since is not None:
-                elapsed = (dt_util.utcnow() - self._pending_since).total_seconds()
-                if elapsed >= self._hysteresis_delay:
-                    # Time has passed, apply the change
-                    self._cancel_hysteresis_timer()
-                    if new_state is not None:
-                        self._apply_source_state(new_source, new_state, True)
-                    else:
-                        self._set_unavailable(previous_source)
-            return
-
-        # New pending source, start tracking
-        self._cancel_hysteresis_timer()
+        self._clear_pending_source()
         self._pending_source = new_source
         self._pending_since = dt_util.utcnow()
 
@@ -325,40 +325,83 @@ class FallbackSensor(SensorEntity):
             self._hysteresis_delay,
         )
 
-        # Schedule the change
-        self._hysteresis_timer = self.hass.loop.call_later(
+        self._hysteresis_timer = async_call_later(
+            self.hass,
             self._hysteresis_delay,
-            lambda: self.hass.async_create_task(self._apply_pending_source()),
+            self._async_hysteresis_elapsed,
         )
 
-    async def _apply_pending_source(self) -> None:
-        """Apply the pending source change after hysteresis delay."""
-        if self._pending_source is None:
-            return
+    @callback
+    def _async_hysteresis_elapsed(self, _now: datetime) -> None:
+        """Apply the pending switch once the hysteresis delay has elapsed.
 
-        _LOGGER.info(
-            "Fallback sensor '%s': applying pending switch to '%s'",
-            self.name,
-            self._pending_source,
-        )
+        Args:
+            _now: Time the timer fired (unused).
+        """
+        # The timer has fired: its cancel callback is spent.
+        self._hysteresis_timer = None
 
-        # Re-check the active source
-        active_entity_id, active_state = self._get_active_entity()
+        try:
+            if self._pending_since is None:
+                # The switch was abandoned before the timer fired.
+                return
 
-        if active_state is not None:
-            self._apply_source_state(active_entity_id, active_state, True)
-        else:
-            self._set_unavailable(self._current_source)
+            _LOGGER.info(
+                "Fallback sensor '%s': applying pending switch to '%s'",
+                self.name,
+                self._pending_source,
+            )
+            self._clear_pending_source()
+
+            # Re-read the sources: the situation may have changed during the
+            # delay, and only a real switch counts as a fallback.
+            previous_source = self._current_source
+            active_entity_id, active_state = self._get_active_entity()
+            self._apply_active_source(
+                active_entity_id,
+                active_state,
+                previous_source,
+                record_fallback=active_entity_id != previous_source,
+            )
+            self.async_write_ha_state()
+        except Exception:  # a timer callback must never raise
+            _LOGGER.exception(
+                "Unexpected error while applying the pending source of fallback "
+                "sensor '%s'",
+                self.entity_id,
+            )
+
+    def _clear_pending_source(self) -> None:
+        """Drop any pending switch and cancel its timer."""
+        if self._hysteresis_timer is not None:
+            self._hysteresis_timer()
+            self._hysteresis_timer = None
 
         self._pending_source = None
         self._pending_since = None
-        self.async_write_ha_state()
 
-    def _cancel_hysteresis_timer(self) -> None:
-        """Cancel any pending hysteresis timer."""
-        if self._hysteresis_timer is not None:
-            self._hysteresis_timer.cancel()
-            self._hysteresis_timer = None
+    def _apply_active_source(
+        self,
+        entity_id: str | None,
+        state: State | None,
+        previous_source: str | None,
+        *,
+        record_fallback: bool,
+    ) -> None:
+        """Apply the resolved source to the sensor state.
+
+        Args:
+            entity_id: Resolved source entity ID, None when none is valid.
+            state: State of the resolved source, None when none is valid.
+            previous_source: Source entity ID in use before this update.
+            record_fallback: Whether this update counts as a fallback event.
+        """
+        self._initialized = True
+
+        if state is not None and entity_id is not None:
+            self._apply_source_state(entity_id, state, record_fallback)
+        else:
+            self._set_unavailable(previous_source, record_fallback)
 
     def _apply_source_state(
         self, entity_id: str, state: State, record_fallback: bool
@@ -386,11 +429,14 @@ class FallbackSensor(SensorEntity):
             )
             self._record_fallback()
 
-    def _set_unavailable(self, previous_source: str | None) -> None:
+    def _set_unavailable(
+        self, previous_source: str | None, record_fallback: bool
+    ) -> None:
         """Set sensor as unavailable.
 
         Args:
             previous_source: Previous source entity ID.
+            record_fallback: Whether losing the source counts as a fallback.
         """
         self._attr_native_value = None
         self._current_source = None
@@ -402,6 +448,8 @@ class FallbackSensor(SensorEntity):
                 "No available source for fallback sensor '%s'",
                 self.name,
             )
+
+        if record_fallback and previous_source is not None:
             self._record_fallback()
 
     def _get_active_entity(self) -> tuple[str | None, State | None]:

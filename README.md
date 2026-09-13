@@ -60,6 +60,18 @@ sensor:
 
 4. If all entities are unavailable, the sensor becomes `unavailable`
 
+### Hysteresis
+
+With `hysteresis_delay` set to a non-zero value, a switch to another source —
+including a switch to `unavailable` when no source is left — is only applied
+once the delay has elapsed without the situation improving. If the current
+source becomes valid again during the wait, the pending switch is abandoned. If
+the source the sensor was heading to becomes invalid too, the delay restarts on
+the new target.
+
+Each completed switch counts as exactly one fallback, whether it was applied by
+the timer or by a source event received after the delay.
+
 ### Feedback loop protection
 
 A fallback sensor writes its own state whenever one of its sources changes. If
@@ -103,6 +115,14 @@ source_entities:                             # Complete list of sources
 source_index: 0                              # Index of active source (0 = primary)
 fallback_count: 3                            # Number of switches since startup
 last_fallback_time: "2025-11-07T10:30:00"   # Timestamp of last switch
+```
+
+`fallback_count` counts the source switches that happened after the sensor
+started: selecting the first source at startup is not a fallback, so a sensor
+whose primary source never fails keeps a count of `0`. The counter is reset
+when Home Assistant restarts or the entry is reloaded.
+
+```yaml
 ```
 
 ## Usage examples
